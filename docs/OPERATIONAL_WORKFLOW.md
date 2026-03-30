@@ -2,52 +2,44 @@
 
 ## Role Assignment
 
-| Tool | Role | Responsibility |
-|------|------|----------------|
-| Claude Code Web | Architect / Auditor | Design, docs, issue decomposition, PR review, log interpretation |
-| Codex | Implementation Worker | Issue-unit coding, 1 Issue = 1 PR |
-| GitHub | Source of Truth | Docs, issues, PRs, release notes |
-| Cloudflare | Deploy Platform | Preview builds, production deploy via GitHub integration |
+| Tool | Role | What it does | What it does NOT do |
+|------|------|-------------|--------------------|
+| Claude Code Web | Architect / Auditor | Design, docs, Issue decomposition, PR review, log interpretation | Direct implementation, Codex invocation, Cloudflare API calls |
+| Codex | Implementation Worker | Issue-unit coding, 1 Issue = 1 PR, triggered by GitHub Action | Design decisions, scope expansion, direct deploy |
+| GitHub | Source of Truth | Docs, Issues, PRs, Actions, labels, branch protection | Runtime, secrets storage |
+| Cloudflare | Deploy Platform | Preview builds, production deploy via GitHub Actions | Code review, issue management |
 
-## Development Flow
-
-```
-1. User -> Claude Code Web: requirements
-2. Claude Code Web: docs update + issue decomposition
-3. GitHub: issue filed
-4. Codex: implements that issue only
-5. Codex: creates PR
-6. Cloudflare: preview build / preview URL
-7. Claude Code Web: reviews PR diff + build result
-8. Fix needed? -> Claude Code Web creates fix issue -> Codex fixes
-9. OK? -> merge to main -> Cloudflare production deploy
-```
-
-## Incident / Log Investigation Flow
+## Automation Flow
 
 ```
-1. Cloudflare build/deploy fails or runtime error
-2. Check GitHub PR / commit status / build comment
-3. Claude Code Web reads build log / runtime log / error
-4. Claude Code Web creates fix issue with:
-   - factual failure description
-   - separated assumptions
-   - reproduction conditions
-   - fix scope
-   - DoD and test plan
-5. Codex implements fix issue only
-6. Re-deploy
+1. Claude Code Web: creates Issue with `codex` label
+2. GitHub Action: detects `codex` label -> triggers Codex
+3. Codex: implements Issue -> creates PR
+4. GitHub Action: deploys to Cloudflare staging (on PR or staging push)
+5. Claude Code Web: reviews PR diff + Cloudflare build log
+6. Human: approves or requests changes
+7. Merge to main -> Cloudflare production deploy
 ```
 
-## Key Rules
+## Issue Lifecycle
 
-1. Codex only works from GitHub Issues (never ad-hoc)
-2. Claude Code Web does not implement broad changes directly
-3. Cloudflare auto-deploys on GitHub push
-4. Preview build must pass before merge
-5. Production deploy only from main branch
-6. Log observation and incident triage goes to Claude Code Web
-7. Long context/background goes in repo docs, not UI paste
+```
+Claude creates Issue
+  -> adds `codex` label
+  -> Codex GitHub Action picks it up
+  -> Codex creates branch + PR
+  -> deploy-worker.yml deploys to staging
+  -> Claude reviews PR
+  -> fix needed? -> Claude creates fix Issue -> Codex fixes
+  -> OK? -> merge to main -> production deploy
+```
+
+## Codex Trigger Rules
+
+- Codex runs when Issue gets `codex` label
+- Codex reads: CLAUDE.md, docs/, Issue body
+- Codex creates: feature branch + PR with minimal diff
+- Codex does NOT: broaden scope, touch unrelated files, skip tests
 
 ## Codex Task Template
 
@@ -76,7 +68,19 @@ Deliver:
 - Test notes
 ```
 
-## Claude Code Log Investigation Template
+## Claude PR Review Checklist
+
+When reviewing a Codex PR, Claude checks:
+
+1. **Scope match** - Does the diff match the Issue and nothing else?
+2. **Safety** - No direct DB writes, no secret exposure, no delivery path changes?
+3. **Existing reuse** - Does it use existing services/routes/adapters?
+4. **preview/confirm** - If mutating, is preview/confirm preserved?
+5. **Tests** - Are tests added or updated?
+6. **Build** - Did Cloudflare staging deploy succeed?
+7. **Docs** - Are docs updated if architecture changed?
+
+## Claude Log Investigation Template
 
 ```text
 Read the following PR / build / runtime log and triage the issue.
@@ -101,12 +105,6 @@ Constraints:
 - Delivery path safety is top priority
 - Do not break preview/confirm policy
 
-Related files:
-- CLAUDE.md
-- docs/REPO_AUDIT.md
-- docs/MEASUREMENT_ARCHITECTURE.md
-- docs/AI_ORCHESTRATION_PLAN.md
-
 Log:
 [paste log here]
 ```
@@ -121,23 +119,28 @@ Log:
 - Agent P2P introduced to production critical path
 - Unconfirmed preview build merged to main
 
-## Cloudflare Initial Setup
+## Deploy Strategy
 
 ### Workers
-- main branch -> production deploy
-- feature/* / PR -> preview build
-- Git integration enabled
-- Build status returned to GitHub
+- `staging` branch -> `lstep-ai-api-stg` (auto via GitHub Actions)
+- `main` branch -> `lstep-ai-api-prod` (auto via GitHub Actions)
+- Manual dispatch available for both
 
-### Pages
-- PR -> preview deployment URL
-- main merge -> production update
+### Branch Flow
+```
+Codex creates feature/* branch from staging
+  -> PR to staging
+  -> auto deploy to lstep-ai-api-stg
+  -> review + merge
+  -> PR staging to main
+  -> auto deploy to lstep-ai-api-prod
+```
 
 ## Merge Policy
 
 A PR must not merge unless:
 - Scope matches one issue
-- Preview build exists and passes
+- Cloudflare staging deploy succeeded
 - Risks explicitly described
 - Tests added/updated where needed
 - No unsafe mutation path introduced
