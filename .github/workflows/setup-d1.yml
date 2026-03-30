@@ -1,12 +1,9 @@
-name: Setup D1 Database
+name: Setup D1 Database (one-time)
 
 on:
-  workflow_dispatch:
-    inputs:
-      db_name:
-        description: 'D1 database name'
-        required: true
-        default: 'lstep-db'
+  push:
+    paths:
+      - '.github/workflows/setup-d1.yml'
 
 jobs:
   create-d1:
@@ -23,20 +20,24 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Create D1 database
+        id: create
         run: |
-          echo "Creating D1 database: ${{ github.event.inputs.db_name }}"
-          wrangler d1 create "${{ github.event.inputs.db_name }}" 2>&1 | tee /tmp/d1_output.txt
+          echo "Creating D1 database: lstep-db"
+          OUTPUT=$(wrangler d1 create "lstep-db" 2>&1) || true
+          echo "$OUTPUT"
+          DB_ID=$(echo "$OUTPUT" | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+          echo "database_id=$DB_ID" >> $GITHUB_OUTPUT
           echo "---"
-          echo "IMPORTANT: Copy the database_id from above and update wrangler.toml"
+          echo "Database ID: $DB_ID"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      - name: Show result
+      - name: Summary
         run: |
-          echo "## D1 Database Created" >> $GITHUB_STEP_SUMMARY
+          echo "## D1 Database Setup" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Database name: ${{ github.event.inputs.db_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Database name:** lstep-db" >> $GITHUB_STEP_SUMMARY
+          echo "- **Database ID:** ${{ steps.create.outputs.database_id }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Check the 'Create D1 database' step logs for the database_id." >> $GITHUB_STEP_SUMMARY
-          echo "Update wrangler.toml with the database_id value." >> $GITHUB_STEP_SUMMARY
+          echo "Next: update \`wrangler.toml\` with the database_id above." >> $GITHUB_STEP_SUMMARY
