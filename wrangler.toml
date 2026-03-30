@@ -4,11 +4,10 @@ compatibility_date = "2024-12-01"
 compatibility_flags = ["nodejs_compat"]
 
 # D1 Database binding
-# database_id is set per environment below
 [[d1_databases]]
 binding = "DB"
 database_name = "lstep-db"
-database_id = "REPLACE_AFTER_D1_CREATION"
+database_id = "f93fa9e9-684e-4ed1-b5bb-d53fbf1bef56"
 
 # Environment variables (non-secret)
 [vars]
@@ -29,8 +28,7 @@ name = "lstep-ai-api-stg"
 [env.staging.vars]
 ENVIRONMENT = "staging"
 
-# Staging D1 (create a separate DB for staging if needed)
-# [[env.staging.d1_databases]]
-# binding = "DB"
-# database_name = "lstep-db-stg"
-# database_id = "REPLACE_AFTER_D1_STG_CREATION"
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "lstep-db"
+database_id = "f93fa9e9-684e-4ed1-b5bb-d53fbf1bef56"
