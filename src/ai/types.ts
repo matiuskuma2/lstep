@@ -38,6 +38,8 @@ export interface AiChatRequest {
   };
   history?: ChatMessage[];
   accumulated_slots?: SlotValue[];
+  bot_id?: string;
+  knowledge_ids?: string[];
 }
 
 export interface AiChatResponse {
