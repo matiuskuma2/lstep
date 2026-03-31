@@ -4,7 +4,7 @@ import { TrackedLinkAdapter } from './adapters/tracked-link';
 import type { CreateTrackedLinkInput } from './adapters/tracked-link';
 import { AuthService } from './auth/service';
 import { AdminService } from './auth/admin-service';
-import { extractAuth, requireRole } from './auth/middleware';
+import { extractAuth, requireRole, requireTenant } from './auth/middleware';
 import { getAdminHtml } from './pages/admin';
 import { getDashboardHtml, getTrackedLinksPageHtml, getPlaceholderPageHtml } from './pages/dashboard';
 import { getScenariosPageHtml } from './pages/scenarios';
@@ -17,6 +17,8 @@ import { getFriendsPageHtml, getBroadcastsPageHtml, getFormsPageHtml } from './p
 import { FriendAdapter } from './adapters/friend';
 import { BroadcastAdapter } from './adapters/broadcast';
 import { FormAdapter } from './adapters/form';
+import { BotAdapter, KnowledgeAdapter } from './adapters/bot-knowledge';
+import type { CreateBotInput, CreateKnowledgeInput } from './adapters/bot-knowledge';
 
 export interface Env {
   DB: D1Database;
@@ -68,6 +70,10 @@ export default {
         response = await handleConversionPoints(request, env);
       } else if (url.pathname === '/api/scenarios' || url.pathname.startsWith('/api/scenarios/')) {
         response = await handleScenarios(request, url, env);
+      } else if (url.pathname === '/api/bots' || url.pathname.startsWith('/api/bots/')) {
+        response = await handleBots(request, url, env);
+      } else if (url.pathname === '/api/knowledge') {
+        response = await handleKnowledge(request, env);
       } else if (url.pathname === '/api/ai/test') {
         response = await handleAiTest(request, env);
       } else if (url.pathname === '/api/ai/chat') {
@@ -429,6 +435,116 @@ async function handleScenarios(request: Request, url: URL, env: Env): Promise<Re
     await adapter.update(scenarioId, body);
     const updated = await adapter.getById(scenarioId);
     return Response.json({ status: 'ok', scenario: updated });
+  }
+  return Response.json({ error: 'method not allowed' }, { status: 405 });
+}
+
+// --- Bots ---
+async function handleBots(request: Request, url: URL, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+
+  const botAdapter = new BotAdapter(env.DB);
+  const knowledgeAdapter = new KnowledgeAdapter(env.DB);
+  const tenantId = auth!.tenant_id;
+
+  // GET /api/bots
+  if (url.pathname === '/api/bots' && request.method === 'GET') {
+    const bots = tenantId ? await botAdapter.list(tenantId) : await botAdapter.listAll();
+    return Response.json({ status: 'ok', bots });
+  }
+  // POST /api/bots
+  if (url.pathname === '/api/bots' && request.method === 'POST') {
+    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
+    let body: CreateBotInput;
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    try { const bot = await botAdapter.create(tenantId, body); return Response.json({ status: 'ok', bot }, { status: 201 }); }
+    catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
+  }
+
+  // /api/bots/:id or /api/bots/:id/knowledge or /api/bots/:id/knowledge/:knowledgeId
+  const parts = url.pathname.replace('/api/bots/', '').split('/');
+  const botId = parts[0];
+  if (!botId) return Response.json({ error: 'missing id' }, { status: 400 });
+
+  if (parts[1] === 'knowledge' && parts.length === 2 && request.method === 'POST') {
+    let body: { knowledge_id?: string; knowledgeId?: string };
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    const knowledgeId = body.knowledge_id || body.knowledgeId;
+    if (!knowledgeId) return Response.json({ status: 'error', message: 'knowledge_id is required' }, { status: 400 });
+
+    const bot = await botAdapter.getById(botId);
+    if (!bot) return Response.json({ error: 'not found' }, { status: 404 });
+    const tenantDeniedForBot = requireTenant(auth, bot.tenant_id);
+    if (tenantDeniedForBot) return tenantDeniedForBot;
+
+    const knowledge = await knowledgeAdapter.getById(knowledgeId);
+    if (!knowledge) return Response.json({ error: 'knowledge not found' }, { status: 404 });
+    const tenantDeniedForKnowledge = requireTenant(auth, knowledge.tenant_id);
+    if (tenantDeniedForKnowledge) return tenantDeniedForKnowledge;
+    if (bot.tenant_id !== knowledge.tenant_id) {
+      return Response.json({ status: 'error', message: 'bot and knowledge must belong to the same tenant' }, { status: 400 });
+    }
+
+    await botAdapter.bindKnowledge(botId, knowledgeId);
+    return Response.json({ status: 'ok' });
+  }
+
+  if (parts[1] === 'knowledge' && parts.length === 3 && parts[2] && request.method === 'DELETE') {
+    const knowledgeId = parts[2];
+    const bot = await botAdapter.getById(botId);
+    if (!bot) return Response.json({ error: 'not found' }, { status: 404 });
+    const tenantDeniedForBot = requireTenant(auth, bot.tenant_id);
+    if (tenantDeniedForBot) return tenantDeniedForBot;
+
+    const knowledge = await knowledgeAdapter.getById(knowledgeId);
+    if (!knowledge) return Response.json({ error: 'knowledge not found' }, { status: 404 });
+    const tenantDeniedForKnowledge = requireTenant(auth, knowledge.tenant_id);
+    if (tenantDeniedForKnowledge) return tenantDeniedForKnowledge;
+    if (bot.tenant_id !== knowledge.tenant_id) {
+      return Response.json({ status: 'error', message: 'bot and knowledge must belong to the same tenant' }, { status: 400 });
+    }
+
+    await botAdapter.unbindKnowledge(botId, knowledgeId);
+    return Response.json({ status: 'ok' });
+  }
+
+  if (parts[1]) return Response.json({ error: 'method not allowed' }, { status: 405 });
+
+  // GET /api/bots/:id
+  if (request.method === 'GET') {
+    const bot = await botAdapter.getWithKnowledge(botId);
+    if (!bot) return Response.json({ error: 'not found' }, { status: 404 });
+    const tenantDenied = requireTenant(auth, bot.tenant_id);
+    if (tenantDenied) return tenantDenied;
+    return Response.json({ status: 'ok', bot });
+  }
+
+  return Response.json({ error: 'method not allowed' }, { status: 405 });
+}
+
+// --- Knowledge ---
+async function handleKnowledge(request: Request, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+
+  const adapter = new KnowledgeAdapter(env.DB);
+  const tenantId = auth!.tenant_id;
+
+  if (request.method === 'GET') {
+    const knowledge = tenantId ? await adapter.list(tenantId) : await adapter.listAll();
+    return Response.json({ status: 'ok', knowledge });
+  }
+  if (request.method === 'POST') {
+    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
+    let body: CreateKnowledgeInput;
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    try { const item = await adapter.create(tenantId, body); return Response.json({ status: 'ok', knowledge: item }, { status: 201 }); }
+    catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
 }

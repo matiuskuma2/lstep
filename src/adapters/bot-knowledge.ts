@@ -180,4 +180,8 @@ export class KnowledgeAdapter {
     const r = await this.db.prepare('SELECT * FROM knowledge_items ORDER BY created_at DESC').all<KnowledgeItem>();
     return r.results || [];
   }
+
+  async getById(id: string): Promise<KnowledgeItem | null> {
+    return await this.db.prepare('SELECT * FROM knowledge_items WHERE id = ?').bind(id).first<KnowledgeItem>() || null;
+  }
 }
