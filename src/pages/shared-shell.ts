@@ -99,6 +99,33 @@ if (user) {
 function authHeaders() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }; }
 function logout() { localStorage.removeItem('lchatai_token'); localStorage.removeItem('lchatai_user'); window.location.href = '/login'; }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+async function fetchJson(url) {
+  const r = await fetch(url, { headers: authHeaders() });
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return await r.json();
+}
+function showList(elId, items, colspan, emptyMsg, renderFn) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!items || items.length === 0) { el.innerHTML = '<tr><td colspan="' + colspan + '" style="color:#999">' + (emptyMsg || '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093') + '</td></tr>'; return; }
+  el.innerHTML = renderFn(items);
+}
+function showListDiv(elId, items, emptyMsg, renderFn) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  if (!items || items.length === 0) { el.innerHTML = '<span style="color:#999">' + (emptyMsg || '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093') + '</span>'; return; }
+  el.innerHTML = renderFn(items);
+}
+function showError(elId, colspan, msg) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.innerHTML = '<tr><td colspan="' + colspan + '" style="color:#c62828">' + esc(msg) + '</td></tr>';
+}
+function showErrorDiv(elId, msg) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.innerHTML = '<span style="color:#c62828">' + esc(msg) + '</span>';
+}
     </script>
     ${content}
   </div>
