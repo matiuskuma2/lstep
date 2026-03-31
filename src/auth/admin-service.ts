@@ -125,4 +125,33 @@ export class AdminService {
     ).all<Tenant>();
     return results.results || [];
   }
+
+  async updateTenant(tenantId: string, input: { name?: string; plan?: string; status?: string }): Promise<Tenant> {
+    const tenant = await this.db.prepare('SELECT * FROM tenants WHERE id = ?').bind(tenantId).first<Tenant>();
+    if (!tenant) throw new Error('Tenant not found');
+
+    if (input.name !== undefined) {
+      await this.db.prepare(
+        "UPDATE tenants SET name = ?, updated_at = datetime('now') WHERE id = ?"
+      ).bind(input.name, tenantId).run();
+    }
+
+    if (input.plan !== undefined) {
+      await this.db.prepare(
+        "UPDATE tenants SET plan = ?, updated_at = datetime('now') WHERE id = ?"
+      ).bind(input.plan, tenantId).run();
+    }
+
+    if (input.status !== undefined) {
+      if (input.status !== 'active' && input.status !== 'inactive') {
+        throw new Error('status must be "active" or "inactive"');
+      }
+      await this.db.prepare(
+        "UPDATE tenants SET status = ?, updated_at = datetime('now') WHERE id = ?"
+      ).bind(input.status, tenantId).run();
+    }
+
+    const updated = await this.db.prepare('SELECT * FROM tenants WHERE id = ?').bind(tenantId).first<Tenant>();
+    return updated!;
+  }
 }

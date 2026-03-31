@@ -52,6 +52,8 @@ export default {
         response = await handleAdminUserById(request, url, env);
       } else if (url.pathname === '/api/admin/users') {
         response = await handleAdminUsers(request, env);
+      } else if (url.pathname.startsWith('/api/admin/tenants/') && url.pathname !== '/api/admin/tenants') {
+        response = await handleAdminTenantById(request, url, env);
       } else if (url.pathname === '/api/admin/tenants') {
         response = await handleAdminTenants(request, env);
       } else if (url.pathname === '/api/friends') {
@@ -187,6 +189,38 @@ async function handleAdminTenants(request: Request, env: Env): Promise<Response>
   const adminService = new AdminService(env.DB, authService);
   const tenants = await adminService.listTenants();
   return Response.json({ status: 'ok', tenants });
+}
+
+async function handleAdminTenantById(request: Request, url: URL, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'ADMIN_JWT_SECRET not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin');
+  if (denied) return denied;
+
+  const authService = new AuthService(env.DB, env.ADMIN_JWT_SECRET);
+  const adminService = new AdminService(env.DB, authService);
+  const segments = url.pathname.split('/');
+  // /api/admin/tenants/:id => segments[4]
+  const tenantId = segments[4];
+
+  if (request.method !== 'PATCH') {
+    return Response.json({ error: 'method not allowed' }, { status: 405 });
+  }
+
+  let body: { name?: string; plan?: string; status?: string };
+  try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+
+  if (body.name === undefined && body.plan === undefined && body.status === undefined) {
+    return Response.json({ status: 'error', message: 'Nothing to update' }, { status: 400 });
+  }
+
+  try {
+    const tenant = await adminService.updateTenant(tenantId, body);
+    return Response.json({ status: 'ok', tenant });
+  } catch (err: any) {
+    const status = err.message === 'Tenant not found' ? 404 : 400;
+    return Response.json({ status: 'error', message: err.message }, { status });
+  }
 }
 
 // --- Auth ---
