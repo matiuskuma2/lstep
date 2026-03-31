@@ -123,6 +123,7 @@ tr:hover td { background: #fafafa; }
 </div>
 <div class="msg success" id="actionSuccess" style="position:fixed;top:16px;right:16px;z-index:200;display:none;min-width:200px;"></div>
 <div class="msg error" id="actionError" style="position:fixed;top:16px;right:16px;z-index:200;display:none;min-width:200px;"></div>
+<footer style="text-align:center;color:#999;font-size:12px;margin:24px 0;">Powered by lchatAI</footer>
 <script>
 const token = localStorage.getItem('lchatai_token');
 const user = JSON.parse(localStorage.getItem('lchatai_user') || 'null');
