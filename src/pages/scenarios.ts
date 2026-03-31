@@ -50,6 +50,10 @@ export function getScenariosPageHtml(): string {
     async function loadScenarios() {
       try {
         const r = await fetch('/api/scenarios', {headers: authHeaders()});
+        if (!r.ok) {
+          document.getElementById('scenarioList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u30c7\u30fc\u30bf\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\uff08' + r.status + '\uff09</td></tr>';
+          return;
+        }
         const d = await r.json();
         const list = d.scenarios || [];
         if (list.length === 0) { document.getElementById('scenarioList').innerHTML = '<tr><td colspan="5" style="color:#999">\u30b7\u30ca\u30ea\u30aa\u304c\u3042\u308a\u307e\u305b\u3093</td></tr>'; return; }
@@ -60,7 +64,10 @@ export function getScenariosPageHtml(): string {
           '<td>'+s.created_at.substring(0,10)+'</td>' +
           '<td><button class="btn btn-primary" onclick="event.stopPropagation();showDetail(\''+s.id+'\')" style="padding:4px 12px;font-size:12px">\u8a73\u7d30</button></td></tr>'
         ).join('');
-      } catch(e) { console.error(e); }
+      } catch(e) {
+        const message = e instanceof Error ? e.message : String(e);
+        document.getElementById('scenarioList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u8aad\u307f\u8fbc\u307f\u30a8\u30e9\u30fc: ' + message + '</td></tr>';
+      }
     }
     async function createScenario() {
       const er=document.getElementById('createError'),su=document.getElementById('createSuccess');

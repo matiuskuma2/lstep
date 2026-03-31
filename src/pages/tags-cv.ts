@@ -18,13 +18,22 @@ export function getTagsPageHtml(): string {
     </div>
     <script>
     async function loadTags() {
-      const r = await fetch('/api/tags', {headers:authHeaders()});
-      const d = await r.json();
-      const tags = d.tags || [];
-      if (!tags.length) { document.getElementById('tagList').innerHTML = '<span style="color:#999">\u30bf\u30b0\u306a\u3057</span>'; return; }
-      document.getElementById('tagList').innerHTML = tags.map(t =>
-        '<div style="background:'+t.color+'22;border:1px solid '+t.color+';color:'+t.color+';padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500">'+esc(t.name)+'</div>'
-      ).join('');
+      try {
+        const r = await fetch('/api/tags', {headers:authHeaders()});
+        if (!r.ok) {
+          document.getElementById('tagList').innerHTML = '<span style="color:#c62828">\u30c7\u30fc\u30bf\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\uff08' + r.status + '\uff09</span>';
+          return;
+        }
+        const d = await r.json();
+        const tags = d.tags || [];
+        if (!tags.length) { document.getElementById('tagList').innerHTML = '<span style="color:#999">\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093</span>'; return; }
+        document.getElementById('tagList').innerHTML = tags.map(t =>
+          '<div style="background:'+t.color+'22;border:1px solid '+t.color+';color:'+t.color+';padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500">'+esc(t.name)+'</div>'
+        ).join('');
+      } catch(e) {
+        const message = e instanceof Error ? e.message : String(e);
+        document.getElementById('tagList').innerHTML = '<span style="color:#c62828">\u8aad\u307f\u8fbc\u307f\u30a8\u30e9\u30fc: ' + message + '</span>';
+      }
     }
     async function createTag() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');
@@ -65,13 +74,22 @@ export function getConversionsPageHtml(): string {
     </div>
     <script>
     async function loadCVs() {
-      const r = await fetch('/api/conversion-points', {headers:authHeaders()});
-      const d = await r.json();
-      const items = d.conversion_points || [];
-      if (!items.length) { document.getElementById('cvList').innerHTML = '<tr><td colspan="5" style="color:#999">CV\u30dd\u30a4\u30f3\u30c8\u306a\u3057</td></tr>'; return; }
-      document.getElementById('cvList').innerHTML = items.map(c =>
-        '<tr><td>'+esc(c.name)+'</td><td><code style="background:#f5f5f5;padding:2px 6px;border-radius:4px;font-size:12px">'+esc(c.code)+'</code></td><td><span class="badge badge-active">'+c.scope+'</span></td><td>'+c.verification_method+'</td><td>'+c.created_at.substring(0,10)+'</td></tr>'
-      ).join('');
+      try {
+        const r = await fetch('/api/conversion-points', {headers:authHeaders()});
+        if (!r.ok) {
+          document.getElementById('cvList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u30c7\u30fc\u30bf\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\uff08' + r.status + '\uff09</td></tr>';
+          return;
+        }
+        const d = await r.json();
+        const items = d.conversion_points || [];
+        if (!items.length) { document.getElementById('cvList').innerHTML = '<tr><td colspan="5" style="color:#999">\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093</td></tr>'; return; }
+        document.getElementById('cvList').innerHTML = items.map(c =>
+          '<tr><td>'+esc(c.name)+'</td><td><code style="background:#f5f5f5;padding:2px 6px;border-radius:4px;font-size:12px">'+esc(c.code)+'</code></td><td><span class="badge badge-active">'+c.scope+'</span></td><td>'+c.verification_method+'</td><td>'+c.created_at.substring(0,10)+'</td></tr>'
+        ).join('');
+      } catch(e) {
+        const message = e instanceof Error ? e.message : String(e);
+        document.getElementById('cvList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u8aad\u307f\u8fbc\u307f\u30a8\u30e9\u30fc: ' + message + '</td></tr>';
+      }
     }
     async function createCV() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');
