@@ -34,7 +34,7 @@ export default {
       response = Response.json({
         name: 'lstep-ai-api',
         environment: env.ENVIRONMENT,
-        version: '0.4.0',
+        version: '0.4.1',
       });
     } else if (url.pathname === '/api/ai/test') {
       if (request.method === 'GET') {
@@ -63,7 +63,7 @@ export default {
         response = Response.json({ error: 'method not allowed' }, { status: 405 });
       }
     } else if (url.pathname === '/chat') {
-      response = new Response(CHAT_UI_HTML, {
+      response = new Response(getChatHtml(), {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       });
     } else {
@@ -132,7 +132,8 @@ async function handleAiChat(request: Request, env: Env): Promise<Response> {
   }
 }
 
-const CHAT_UI_HTML = `<!DOCTYPE html>
+function getChatHtml(): string {
+  return `<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
@@ -183,15 +184,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <div class="header">lstep AI Chat <span>v0.4 multi-turn</span></div>
 <div class="chat-area" id="chatArea">
   <div class="msg ai">
-    LINE\\u30b9\\u30c6\\u30c3\\u30d7\\u914d\\u4fe1\\u306e\\u8a2d\\u5b9a\\u3092\\u304a\\u624b\\u4f1d\\u3044\\u3057\\u307e\\u3059\\u3002<br><br>
-    \\u4f8b: \\u300c\\u65b0\\u898f\\u53cb\\u3060\\u3061\\u5411\\u3051\\u306b3\\u65e5\\u30b9\\u30c6\\u30c3\\u30d7\\u3092\\u4f5c\\u3063\\u3066\\u300d<br>
-    \\u4f8b: \\u300cYouTube\\u6d41\\u5165\\u5411\\u3051\\u306etracked link\\u3092\\u4f5c\\u3063\\u3066\\u300d<br>
-    \\u4f8b: \\u300c\\u30e9\\u30a4\\u30d5\\u30d7\\u30e9\\u30f3\\u7533\\u8fbc\\u3092CV\\u306b\\u3057\\u3066\\u300d
+    LINEステップ配信の設定をお手伝いします。<br><br>
+    例: 「新規友だち向けに3日ステップを作って」<br>
+    例: 「YouTube流入向けのtracked linkを作って」<br>
+    例: 「ライフプラン申込をCVにして」
   </div>
 </div>
 <div class="input-area">
-  <input type="text" id="msgInput" placeholder="\\u6307\\u793a\\u3092\\u5165\\u529b..." autofocus>
-  <button id="sendBtn" onclick="sendMessage()">\\u2191</button>
+  <input type="text" id="msgInput" placeholder="指示を入力..." autofocus>
+  <button id="sendBtn" onclick="sendMessage()">&#8593;</button>
 </div>
 <script>
 const chatArea = document.getElementById('chatArea');
@@ -213,6 +214,7 @@ async function sendMessage() {
   addMsg(msg, 'user');
   conversationHistory.push({ role: 'user', content: msg });
   msgInput.value = '';
+  msgInput.placeholder = '指示を入力...';
   sendBtn.disabled = true;
 
   const loadingEl = document.createElement('div');
@@ -285,10 +287,10 @@ function addPlanMsg(data) {
   let html = '<div class="intent-badge">' + esc(data.intent) + ' (' + Math.round((data.confidence || 0) * 100) + '%)</div>';
 
   html += '<div class="progress-bar"><div class="progress-fill" style="width:' + progress + '%"></div></div>';
-  html += '<div style="font-size:11px;color:#666;margin-top:2px">' + filled.length + '/' + totalRequired + ' \\u9805\\u76ee\\u5b8c\\u4e86</div>';
+  html += '<div style="font-size:11px;color:#666;margin-top:2px">' + filled.length + '/' + totalRequired + ' 項目完了</div>';
 
   if (filled.length > 0) {
-    html += '<div class="slots-section"><h4>\\u2705 \\u691c\\u51fa\\u3055\\u308c\\u305f\\u60c5\\u5831</h4>';
+    html += '<div class="slots-section"><h4>&#x2705; 検出された情報</h4>';
     filled.forEach(s => {
       html += '<div class="slot-item"><span class="slot-name">' + esc(s.name) + ':</span><span class="slot-value">' + esc(String(s.value)) + '</span></div>';
     });
@@ -296,25 +298,25 @@ function addPlanMsg(data) {
   }
 
   if (data.missing_slots && data.missing_slots.length > 0) {
-    html += '<div class="missing-section"><h4>\\u2753 \\u4e0d\\u8db3\\u3057\\u3066\\u3044\\u308b\\u60c5\\u5831</h4>';
+    html += '<div class="missing-section"><h4>&#x2753; 不足している情報</h4>';
     data.missing_slots.forEach(s => {
-      html += '<div class="missing-q" onclick="fillQuestion(\\'' + esc(s.ask_question).replace(/'/g, "\\\\'") + '\\')">' + '\\u30fb' + esc(s.ask_question) + '</div>';
+      html += '<div class="missing-q" onclick="fillQuestion(\\''+esc(s.ask_question).replace(/'/g,"\\\\'")+'\\')">・' + esc(s.ask_question) + '</div>';
     });
     html += '</div>';
   }
 
   if (data.plan) {
-    html += '<div class="plan-section"><h4>\\u{1f4cb} \\u5b9f\\u884c\\u30d7\\u30e9\\u30f3</h4>';
+    html += '<div class="plan-section"><h4>&#x1f4cb; 実行プラン</h4>';
     html += '<div class="plan-desc">' + esc(data.plan.description) + '</div>';
     html += '</div>';
   }
 
   if (data.is_complete) {
-    html += '<div class="confirm-badge complete" onclick="confirmPlan()">\\u2705 \\u3053\\u306e\\u5185\\u5bb9\\u3067\\u5b9f\\u884c\\u3059\\u308b</div>';
+    html += '<div class="confirm-badge complete" onclick="confirmPlan()">&#x2705; この内容で実行する</div>';
   } else if (data.requires_confirmation) {
-    html += '<div class="confirm-badge required">\\u{1f512} \\u60c5\\u5831\\u304c\\u63c3\\u3063\\u305f\\u3089\\u78ba\\u8a8d\\u3078</div>';
+    html += '<div class="confirm-badge required">&#x1f512; 情報が揃ったら確認へ</div>';
   } else {
-    html += '<div class="confirm-badge not-required">\\u2705 \\u78ba\\u8a8d\\u4e0d\\u8981</div>';
+    html += '<div class="confirm-badge not-required">&#x2705; 確認不要</div>';
   }
 
   el.innerHTML = html;
@@ -322,7 +324,7 @@ function addPlanMsg(data) {
 }
 
 function confirmPlan() {
-  addMsg('[\\u78ba\\u8a8d] \\u5b9f\\u884c\\u3092\\u627f\\u8a8d\\u3057\\u307e\\u3057\\u305f\\u3002\\uff08\\u203b\\u73fe\\u5728\\u306fpreview-only\\u30e2\\u30fc\\u30c9\\u3067\\u3059\\u3002\\u5b9f\\u969b\\u306e\\u5b9f\\u884c\\u306f\\u6b21\\u306e\\u30d5\\u30a7\\u30fc\\u30ba\\u3067\\u5b9f\\u88c5\\u3055\\u308c\\u307e\\u3059\\u3002\\uff09', 'ai');
+  addMsg('[確認] 実行を承認しました。（※現在はpreview-onlyモードです。実際の実行は次のフェーズで実装されます。）', 'ai');
   conversationHistory = [];
   accumulatedSlots = [];
   currentIntent = null;
@@ -332,3 +334,4 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s; re
 </script>
 </body>
 </html>`;
+}
