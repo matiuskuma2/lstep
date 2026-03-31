@@ -26,11 +26,18 @@ export interface PlanAction {
   params?: Record<string, unknown>;
 }
 
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface AiChatRequest {
   message: string;
   context?: {
     line_account_id?: string;
   };
+  history?: ChatMessage[];
+  accumulated_slots?: SlotValue[];
 }
 
 export interface AiChatResponse {
@@ -43,5 +50,6 @@ export interface AiChatResponse {
     actions: PlanAction[];
   };
   requires_confirmation: boolean;
+  is_complete: boolean;
   raw_message: string;
 }

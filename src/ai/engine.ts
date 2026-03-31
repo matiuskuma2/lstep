@@ -1,13 +1,37 @@
 import { SYSTEM_PROMPT_V1 } from './prompts';
-import type { AiChatRequest, AiChatResponse } from './types';
+import type { AiChatRequest, AiChatResponse, ChatMessage } from './types';
 
 export async function generatePlan(
   request: AiChatRequest,
   apiKey: string,
 ): Promise<AiChatResponse> {
-  const userContent = request.context?.line_account_id
-    ? `[Context: LINE account = ${request.context.line_account_id}]\n\n${request.message}`
-    : request.message;
+  const messages: Array<{ role: string; content: string }> = [
+    { role: 'system', content: SYSTEM_PROMPT_V1 },
+  ];
+
+  // Add conversation history
+  if (request.history) {
+    for (const msg of request.history) {
+      messages.push({ role: msg.role, content: msg.content });
+    }
+  }
+
+  // Build current user message with context
+  let userContent = '';
+  if (request.context?.line_account_id) {
+    userContent += `[Context: LINE account = ${request.context.line_account_id}]\n\n`;
+  }
+  if (request.accumulated_slots && request.accumulated_slots.length > 0) {
+    const filled = request.accumulated_slots.filter(s => s.value != null);
+    if (filled.length > 0) {
+      userContent += '[Previously confirmed slots: ' +
+        filled.map(s => `${s.name}=${JSON.stringify(s.value)}`).join(', ') +
+        ']\n\n';
+    }
+  }
+  userContent += request.message;
+
+  messages.push({ role: 'user', content: userContent });
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -17,10 +41,7 @@ export async function generatePlan(
     },
     body: JSON.stringify({
       model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT_V1 },
-        { role: 'user', content: userContent },
-      ],
+      messages,
       max_tokens: 1500,
       temperature: 0.1,
     }),
@@ -45,5 +66,21 @@ export async function generatePlan(
   }
 
   parsed.raw_message = request.message;
+
+  // Merge accumulated slots with newly extracted
+  if (request.accumulated_slots) {
+    const newSlotNames = new Set(parsed.slots.filter(s => s.value != null).map(s => s.name));
+    for (const accSlot of request.accumulated_slots) {
+      if (accSlot.value != null && !newSlotNames.has(accSlot.name)) {
+        parsed.slots.push(accSlot);
+      }
+    }
+  }
+
+  // Recalculate is_complete based on actual filled slots
+  const filledNames = new Set(parsed.slots.filter(s => s.value != null).map(s => s.name));
+  parsed.missing_slots = parsed.missing_slots.filter(s => !filledNames.has(s.name));
+  parsed.is_complete = parsed.missing_slots.length === 0;
+
   return parsed;
 }

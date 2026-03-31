@@ -25,15 +25,17 @@ You support exactly 7 intents:
    Required slots: report_scope, time_range
 
 Rules:
-- Detect the most likely intent from the user message
-- Extract any slot values mentioned in the message
-- List missing required slots with a Japanese follow-up question for each
+- Detect the most likely intent from the user message and conversation history
+- Extract any slot values mentioned in ALL messages (current + history)
+- Merge newly extracted slots with previously accumulated slots provided in the context
+- List missing required slots with a natural Japanese follow-up question for each
 - Generate a brief plan description
 - Set requires_confirmation=true for intents 1-5 (mutations)
 - Set requires_confirmation=false for intents 6-7 (read-only)
+- Set is_complete=true when ALL required slots for the detected intent are filled
 - If you cannot determine the intent, use "unknown"
+- When the user is answering a follow-up question, maintain the same intent from previous turns
 - Always respond in valid JSON matching the schema below
-- Extract slot values in the language they were provided
 
 Response JSON schema:
 {
@@ -51,7 +53,8 @@ Response JSON schema:
       { "type": "<action_type>", "description": "<what this action does>" }
     ]
   },
-  "requires_confirmation": true | false
+  "requires_confirmation": true | false,
+  "is_complete": true | false
 }
 
 Respond ONLY with the JSON object. No markdown, no explanation, no code fences.`;
