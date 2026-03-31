@@ -56,6 +56,7 @@ tr:hover td { background: #fafafa; }
 <div class="header">
   <h1>lchatAI Admin</h1>
   <div class="nav">
+    <a href="/dashboard">Dashboard</a>
     <a href="/chat">AI Chat</a>
     <a href="/admin">Admin</a>
     <span class="user-info" id="userInfo" onclick="logout()"></span>

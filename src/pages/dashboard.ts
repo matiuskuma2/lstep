@@ -168,7 +168,6 @@ tr:hover td { background: #fafafa; }
   </div>
   <div class="sidebar-footer">
     <a href="/chat">&#x1f4ac; AI チャット</a>
-    <a href="/admin" id="superAdminLink" style="display:none">&#x2699; Super Admin</a>
   </div>
 </div>
 <div class="main">
@@ -190,7 +189,13 @@ if (!user || !token) { window.location.href = '/login'; }
 if (user) {
   document.getElementById('userName').textContent = user.login_id + ' (' + user.role + ')';
   document.getElementById('tenantName').textContent = user.tenant_id ? 'Tenant: ' + user.tenant_id.substring(0,8) + '...' : 'System';
-  if (user.role === 'super_admin') { document.getElementById('superAdminLink').style.display = 'block'; }
+  if (user.role === 'super_admin') {
+    const adminLink = document.createElement('a');
+    adminLink.href = '/admin';
+    adminLink.className = 'menu-item' + ('${activePage}' === 'admin' ? ' active' : '');
+    adminLink.innerHTML = '&#x1f6e0; アドミン管理';
+    document.querySelector('.sidebar-menu').appendChild(adminLink);
+  }
 }
 function authHeaders() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }; }
 function logout() { localStorage.removeItem('lchatai_token'); localStorage.removeItem('lchatai_user'); window.location.href = '/login'; }
