@@ -28,7 +28,7 @@ export default {
       if (url.pathname === '/health') {
         response = Response.json({ status: 'ok', environment: env.ENVIRONMENT, timestamp: new Date().toISOString() });
       } else if (url.pathname === '/') {
-        response = Response.json({ name: 'lstep-ai-api', environment: env.ENVIRONMENT, version: '0.6.1' });
+        response = Response.json({ name: 'lchatAI-api', environment: env.ENVIRONMENT, version: '0.7.0' });
       } else if (url.pathname === '/api/auth/login' && request.method === 'POST') {
         response = await handleLogin(request, env);
       } else if (url.pathname === '/api/auth/me' && request.method === 'GET') {
@@ -185,14 +185,14 @@ async function handleRedirect(request: Request, url: URL, env: Env): Promise<Res
   return Response.redirect(link.destination_url, 302);
 }
 
-// --- Setup HTML (bootstrap super admin) ---
+// --- Setup HTML ---
 function getSetupHtml(): string {
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>lstep - 初期セットアップ</title>
+<title>lchatAI - 初期セットアップ</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
@@ -212,7 +212,7 @@ button:hover { background: #05a648; }
 </head>
 <body>
 <div class="card">
-  <h1>lstep 初期セットアップ</h1>
+  <h1>lchatAI 初期セットアップ</h1>
   <div class="subtitle">スーパーアドミンアカウントを作成します（1回のみ）</div>
   <div class="msg error" id="error"></div>
   <div class="msg success" id="success"></div>
@@ -258,7 +258,7 @@ function getLoginHtml(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>lstep Login</title>
+<title>lchatAI Login</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
@@ -277,7 +277,7 @@ button:hover { background: #05a648; }
 </head>
 <body>
 <div class="card">
-  <h1>lstep</h1>
+  <h1>lchatAI</h1>
   <div class="subtitle">管理者ログイン</div>
   <div class="msg error" id="error"></div>
   <div class="msg success" id="success"></div>
@@ -299,8 +299,8 @@ async function doLogin() {
     const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login_id: loginId, password }) });
     const data = await res.json();
     if (data.status === 'ok') {
-      localStorage.setItem('lstep_token', data.token);
-      localStorage.setItem('lstep_user', JSON.stringify(data.user));
+      localStorage.setItem('lchatai_token', data.token);
+      localStorage.setItem('lchatai_user', JSON.stringify(data.user));
       successEl.textContent = 'ログイン成功！';
       successEl.style.display = 'block';
       setTimeout(() => { window.location.href = '/chat'; }, 1000);
@@ -320,7 +320,7 @@ function getChatHtml(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>lstep AI Chat</title>
+<title>lchatAI Chat</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; height: 100vh; display: flex; flex-direction: column; }
@@ -352,11 +352,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 </head>
 <body>
 <div class="header">
-  <div>lstep AI Chat <span>v0.6</span></div>
+  <div>lchatAI <span>v0.7</span></div>
   <div class="user-info" id="userInfo" onclick="logout()"></div>
 </div>
 <div class="chat-area" id="chatArea">
-  <div class="msg ai">LINEステップ配信の設定をお手伝いします。<br><br>例: 「新規友だち向けに3日ステップを作って」<br>例: 「YouTube流入向けのtracked linkを作って」<br>例: 「ライフプラン申込をCVにして」</div>
+  <div class="msg ai">LINE配信の設定をAIがお手伝いします。<br><br>例: 「新規友だち向けに3日ステップを作って」<br>例: 「YouTube流入向けのtracked linkを作って」<br>例: 「ライフプラン申込をCVにして」</div>
 </div>
 <div class="input-area">
   <input type="text" id="msgInput" placeholder="指示を入力..." autofocus>
@@ -370,11 +370,11 @@ const userInfoEl = document.getElementById('userInfo');
 let conversationHistory = [];
 let accumulatedSlots = [];
 
-const user = JSON.parse(localStorage.getItem('lstep_user') || 'null');
+const user = JSON.parse(localStorage.getItem('lchatai_user') || 'null');
 if (user) { userInfoEl.textContent = user.login_id + ' (' + user.role + ') [ログアウト]'; }
 else { userInfoEl.textContent = '未ログイン'; }
 
-function logout() { localStorage.removeItem('lstep_token'); localStorage.removeItem('lstep_user'); window.location.href = '/login'; }
+function logout() { localStorage.removeItem('lchatai_token'); localStorage.removeItem('lchatai_user'); window.location.href = '/login'; }
 
 msgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) sendMessage(); });
 async function sendMessage() {
@@ -386,7 +386,7 @@ async function sendMessage() {
   chatArea.appendChild(loadingEl); chatArea.scrollTop = chatArea.scrollHeight;
   try {
     const headers = { 'Content-Type': 'application/json' };
-    const token = localStorage.getItem('lstep_token'); if (token) headers['Authorization'] = 'Bearer ' + token;
+    const token = localStorage.getItem('lchatai_token'); if (token) headers['Authorization'] = 'Bearer ' + token;
     const res = await fetch('/api/ai/chat', { method: 'POST', headers, body: JSON.stringify({ message: msg, history: conversationHistory.slice(0, -1), accumulated_slots: accumulatedSlots }) });
     const data = await res.json(); chatArea.removeChild(loadingEl);
     if (data.status === 'ok') { accumulatedSlots = (data.slots || []).filter(s => s.value != null); conversationHistory.push({ role: 'assistant', content: 'Intent: ' + data.intent }); addPlanMsg(data); }
