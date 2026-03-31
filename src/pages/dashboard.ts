@@ -6,23 +6,16 @@ export function getDashboardHtml(): string {
     <div class="stats" id="stats"><div class="stat"><div class="num">-</div><div class="label">読み込み中...</div></div></div>
     <script>
     async function loadDashboard() {
-      const h = authHeaders();
       try {
-        const [linksRes] = await Promise.all([fetch('/api/tracked-links', {headers: h})]);
-        if (!linksRes.ok) {
-          document.getElementById('stats').innerHTML = '<div class="stat"><div class="num" style="color:#c62828">-</div><div class="label" style="color:#c62828">データの取得に失敗しました（' + linksRes.status + '）</div></div>';
-          return;
-        }
-        const linksData = await linksRes.json();
-        const links = linksData.links || [];
+        const d = await fetchJson('/api/tracked-links');
+        const links = d.links || [];
         document.getElementById('stats').innerHTML =
           '<div class="stat"><div class="num">' + links.length + '</div><div class="label">トラッキングリンク</div></div>' +
           '<div class="stat"><div class="num">-</div><div class="label">シナリオ</div></div>' +
           '<div class="stat"><div class="num">-</div><div class="label">友だち</div></div>' +
           '<div class="stat"><div class="num">-</div><div class="label">CV</div></div>';
       } catch(e) {
-        const message = e instanceof Error ? e.message : String(e);
-        document.getElementById('stats').innerHTML = '<div class="stat"><div class="num" style="color:#c62828">-</div><div class="label" style="color:#c62828">読み込みエラー: ' + message + '</div></div>';
+        document.getElementById('stats').innerHTML = '<div class="stat"><div class="num" style="color:#c62828">-</div><div class="label" style="color:#c62828">' + esc(e.message) + '</div></div>';
       }
     }
     loadDashboard();
@@ -56,20 +49,19 @@ export function getTrackedLinksPageHtml(): string {
     <script>
     async function loadLinks() {
       try {
-        const r = await fetch('/api/tracked-links', {headers: authHeaders()});
-        const d = await r.json();
-        const links = d.links || [];
-        if (links.length === 0) { document.getElementById('linkList').innerHTML = '<tr><td colspan="7" style="color:#999">リンクがありません</td></tr>'; return; }
-        document.getElementById('linkList').innerHTML = links.map(l =>
-          '<tr><td style="font-size:11px;color:#999">' + l.id.substring(0,8) + '...</td>' +
-          '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">' + esc(l.destination_url) + '</td>' +
-          '<td><span class="badge ' + (l.destination_type==='internal'?'badge-admin':'badge-active') + '">' + l.destination_type + '</span></td>' +
-          '<td>' + (l.campaign_label||'-') + '</td>' +
-          '<td>' + (l.click_count||0) + '</td>' +
-          '<td>' + (l.created_at||'').substring(0,10) + '</td>' +
-          '<td><a href="/t/' + l.id + '" target="_blank" style="color:#1976d2;font-size:12px">テスト</a></td></tr>'
-        ).join('');
-      } catch(e) { console.error(e); }
+        const d = await fetchJson('/api/tracked-links');
+        showList('linkList', d.links || [], 7, 'リンクがありません', items =>
+          items.map(l =>
+            '<tr><td style="font-size:11px;color:#999">' + l.id.substring(0,8) + '...</td>' +
+            '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">' + esc(l.destination_url) + '</td>' +
+            '<td><span class="badge ' + (l.destination_type==='internal'?'badge-admin':'badge-active') + '">' + l.destination_type + '</span></td>' +
+            '<td>' + (l.campaign_label||'-') + '</td>' +
+            '<td>' + (l.click_count||0) + '</td>' +
+            '<td>' + (l.created_at||'').substring(0,10) + '</td>' +
+            '<td><a href="/t/' + l.id + '" target="_blank" style="color:#1976d2;font-size:12px">テスト</a></td></tr>'
+          ).join('')
+        );
+      } catch(e) { showError('linkList', 7, e.message); }
     }
     async function createLink() {
       const er = document.getElementById('createError'), su = document.getElementById('createSuccess');

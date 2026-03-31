@@ -23,20 +23,13 @@ export function getFriendsPageHtml(): string {
     <script>
     async function loadFriends() {
       try {
-        const r = await fetch('/api/friends', {headers:authHeaders()});
-        if (!r.ok) {
-          document.getElementById('fList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u30c7\u30fc\u30bf\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\uff08' + r.status + '\uff09</td></tr>';
-          return;
-        }
-        const d = await r.json(); const items = d.friends || [];
-        if (!items.length) { document.getElementById('fList').innerHTML = '<tr><td colspan="5" style="color:#999">\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093</td></tr>'; return; }
-        document.getElementById('fList').innerHTML = items.map(f =>
-          '<tr><td>'+esc(f.display_name)+'</td><td style="font-size:11px;color:#999">'+(f.line_user_id||'-')+'</td><td>'+(f.ref_code||'-')+'</td><td><span class="badge badge-active">'+f.status+'</span></td><td>'+f.created_at.substring(0,10)+'</td></tr>'
-        ).join('');
-      } catch(e) {
-        const message = e instanceof Error ? e.message : String(e);
-        document.getElementById('fList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u8aad\u307f\u8fbc\u307f\u30a8\u30e9\u30fc: ' + message + '</td></tr>';
-      }
+        const d = await fetchJson('/api/friends');
+        showList('fList', d.friends || [], 5, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
+          items.map(f =>
+            '<tr><td>'+esc(f.display_name)+'</td><td style="font-size:11px;color:#999">'+(f.line_user_id||'-')+'</td><td>'+(f.ref_code||'-')+'</td><td><span class="badge badge-active">'+f.status+'</span></td><td>'+f.created_at.substring(0,10)+'</td></tr>'
+          ).join('')
+        );
+      } catch(e) { showError('fList', 5, e.message); }
     }
     async function addFriend() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');er.style.display='none';su.style.display='none';
@@ -73,20 +66,13 @@ export function getBroadcastsPageHtml(): string {
     <script>
     async function loadBroadcasts() {
       try {
-        const r = await fetch('/api/broadcasts', {headers:authHeaders()});
-        if (!r.ok) {
-          document.getElementById('bList').innerHTML = '<tr><td colspan="4" style="color:#c62828">\u30c7\u30fc\u30bf\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\uff08' + r.status + '\uff09</td></tr>';
-          return;
-        }
-        const d = await r.json(); const items = d.broadcasts || [];
-        if (!items.length) { document.getElementById('bList').innerHTML = '<tr><td colspan="4" style="color:#999">\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093</td></tr>'; return; }
-        document.getElementById('bList').innerHTML = items.map(b =>
-          '<tr><td>'+esc(b.name)+'</td><td><span class="badge '+(b.status==='sent'?'badge-active':'badge-admin')+'">'+b.status+'</span></td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(b.message_content.substring(0,50))+'</td><td>'+b.created_at.substring(0,10)+'</td></tr>'
-        ).join('');
-      } catch(e) {
-        const message = e instanceof Error ? e.message : String(e);
-        document.getElementById('bList').innerHTML = '<tr><td colspan="4" style="color:#c62828">\u8aad\u307f\u8fbc\u307f\u30a8\u30e9\u30fc: ' + message + '</td></tr>';
-      }
+        const d = await fetchJson('/api/broadcasts');
+        showList('bList', d.broadcasts || [], 4, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
+          items.map(b =>
+            '<tr><td>'+esc(b.name)+'</td><td><span class="badge '+(b.status==='sent'?'badge-active':'badge-admin')+'">'+b.status+'</span></td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(b.message_content.substring(0,50))+'</td><td>'+b.created_at.substring(0,10)+'</td></tr>'
+          ).join('')
+        );
+      } catch(e) { showError('bList', 4, e.message); }
     }
     async function createBroadcast() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');er.style.display='none';su.style.display='none';
@@ -125,20 +111,13 @@ export function getFormsPageHtml(): string {
     <script>
     async function loadForms() {
       try {
-        const r = await fetch('/api/forms', {headers:authHeaders()});
-        if (!r.ok) {
-          document.getElementById('formList').innerHTML = '<tr><td colspan="4" style="color:#c62828">\u30c7\u30fc\u30bf\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\uff08' + r.status + '\uff09</td></tr>';
-          return;
-        }
-        const d = await r.json(); const items = d.forms || [];
-        if (!items.length) { document.getElementById('formList').innerHTML = '<tr><td colspan="4" style="color:#999">\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093</td></tr>'; return; }
-        document.getElementById('formList').innerHTML = items.map(f =>
-          '<tr><td>'+esc(f.name)+'</td><td>'+(f.description||'-')+'</td><td><span class="badge badge-active">'+f.status+'</span></td><td>'+f.created_at.substring(0,10)+'</td></tr>'
-        ).join('');
-      } catch(e) {
-        const message = e instanceof Error ? e.message : String(e);
-        document.getElementById('formList').innerHTML = '<tr><td colspan="4" style="color:#c62828">\u8aad\u307f\u8fbc\u307f\u30a8\u30e9\u30fc: ' + message + '</td></tr>';
-      }
+        const d = await fetchJson('/api/forms');
+        showList('formList', d.forms || [], 4, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
+          items.map(f =>
+            '<tr><td>'+esc(f.name)+'</td><td>'+(f.description||'-')+'</td><td><span class="badge badge-active">'+f.status+'</span></td><td>'+f.created_at.substring(0,10)+'</td></tr>'
+          ).join('')
+        );
+      } catch(e) { showError('formList', 4, e.message); }
     }
     async function createForm() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');er.style.display='none';su.style.display='none';

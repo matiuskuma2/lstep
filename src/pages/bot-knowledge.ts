@@ -41,18 +41,13 @@ export function getBotsPageHtml(): string {
     let currentBotId = null;
     async function loadBots() {
       try {
-        const r = await fetch('/api/bots', {headers:authHeaders()});
-        if (!r.ok) { document.getElementById('botList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u30c7\u30fc\u30bf\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\uff08'+r.status+'\uff09</td></tr>'; return; }
-        const d = await r.json();
-        const bots = d.bots || [];
-        if (!bots.length) { document.getElementById('botList').innerHTML = '<tr><td colspan="5" style="color:#999">\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093</td></tr>'; return; }
-        document.getElementById('botList').innerHTML = bots.map(b =>
-          '<tr style="cursor:pointer" onclick="showBot(\\''+b.id+'\\')"><td>'+esc(b.name)+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">'+esc(b.strategy)+'</td><td>'+b.tone+'</td><td><span class="badge badge-active">'+b.status+'</span></td><td>'+b.created_at.substring(0,10)+'</td></tr>'
-        ).join('');
-      } catch(e) {
-        const message = e instanceof Error ? e.message : String(e);
-        document.getElementById('botList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u8aad\u307f\u8fbc\u307f\u30a8\u30e9\u30fc: '+message+'</td></tr>';
-      }
+        const d = await fetchJson('/api/bots');
+        showList('botList', d.bots || [], 5, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
+          items.map(b =>
+            '<tr style="cursor:pointer" onclick="showBot(\\''+b.id+'\\')"><td>'+esc(b.name)+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">'+esc(b.strategy)+'</td><td>'+b.tone+'</td><td><span class="badge badge-active">'+b.status+'</span></td><td>'+b.created_at.substring(0,10)+'</td></tr>'
+          ).join('')
+        );
+      } catch(e) { showError('botList', 5, e.message); }
     }
     async function createBot() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');
@@ -134,18 +129,13 @@ export function getKnowledgePageHtml(): string {
     <script>
     async function loadKnowledge() {
       try {
-        const r = await fetch('/api/knowledge', {headers:authHeaders()});
-        if (!r.ok) { document.getElementById('kList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u30c7\u30fc\u30bf\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\uff08'+r.status+'\uff09</td></tr>'; return; }
-        const d = await r.json();
-        const items = d.knowledge || [];
-        if (!items.length) { document.getElementById('kList').innerHTML = '<tr><td colspan="5" style="color:#999">\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093</td></tr>'; return; }
-        document.getElementById('kList').innerHTML = items.map(k =>
-          '<tr><td>'+esc(k.title)+'</td><td><span class="badge badge-active">'+k.category+'</span></td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(k.content.substring(0,80))+'</td><td><span class="badge badge-active">'+k.status+'</span></td><td>'+k.created_at.substring(0,10)+'</td></tr>'
-        ).join('');
-      } catch(e) {
-        const message = e instanceof Error ? e.message : String(e);
-        document.getElementById('kList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u8aad\u307f\u8fbc\u307f\u30a8\u30e9\u30fc: '+message+'</td></tr>';
-      }
+        const d = await fetchJson('/api/knowledge');
+        showList('kList', d.knowledge || [], 5, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
+          items.map(k =>
+            '<tr><td>'+esc(k.title)+'</td><td><span class="badge badge-active">'+k.category+'</span></td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(k.content.substring(0,80))+'</td><td><span class="badge badge-active">'+k.status+'</span></td><td>'+k.created_at.substring(0,10)+'</td></tr>'
+          ).join('')
+        );
+      } catch(e) { showError('kList', 5, e.message); }
     }
     async function createKnowledge() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');
