@@ -38,6 +38,7 @@ Explain why this is needed. Business context or design rationale.
 - Do not break preview/confirm policy
 - Do not remove manual admin paths
 - Do not put Agent P2P in production critical path
+- Do not leave debug endpoints in merged code
 
 ## Inputs
 **Related docs:**
@@ -48,6 +49,22 @@ Explain why this is needed. Business context or design rationale.
 
 **Related Issues / PRs:**
 - #
+
+## Risk Checklist
+- [ ] null / undefined / empty input handling confirmed
+- [ ] tenant boundary respected (no cross-tenant access)
+- [ ] no direct DB mutation (uses adapter/service)
+- [ ] no secrets exposed in code or logs
+- [ ] existing pages/endpoints not broken
+- [ ] race condition / concurrency impact assessed
+- [ ] error messages actionable, not leaking internals
+
+## Verification Plan
+- **Completion criteria:**
+- **Staging URL to test:**
+- **Expected response:**
+- **DB evidence to check:**
+- **PASS / FAIL / PENDING criteria:**
 
 ## Expected Output
 -
@@ -61,6 +78,8 @@ Explain why this is needed. Business context or design rationale.
 - [ ] Docs updated if needed
 - [ ] Preview build confirmed
 - [ ] Changes are reviewable in PR description
+- [ ] Risk checklist items addressed
+- [ ] Verification plan executable
 
 ## Test Plan
 -

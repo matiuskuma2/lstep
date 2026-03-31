@@ -20,11 +20,25 @@ Explain why this change is needed.
 - [ ] Preview/confirm rule preserved for mutations
 - [ ] No secrets or credentials included
 - [ ] No Agent P2P in production critical path
+- [ ] No debug endpoints left in code
+- [ ] Tenant boundary respected
+- [ ] Error handling present for edge cases
+
+## Concerns
+List any concerns or risks with this change (prefix with warning icon):
+-
+
+## Staging Verification
+- **URL tested:**
+- **Expected result:**
+- **Actual result:**
+- **Verdict:** PASS / FAIL / PENDING
+- **Evidence:**
 
 ## Test Evidence
 - [ ] Unit/integration test
 - [ ] Local/manual verification
-- [ ] Cloudflare preview confirmed
+- [ ] Cloudflare staging deploy confirmed
 
 Results:
 -
