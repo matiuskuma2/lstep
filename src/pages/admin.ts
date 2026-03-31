@@ -142,12 +142,13 @@ async function loadData() {
     const tenantsData = await tenantsRes.json();
     const users = usersData.users || [];
     const tenants = tenantsData.tenants || [];
+    const activeAdmins = users.filter(u => u.role === 'admin' && u.status === 'active').length;
     const tenantMap = {}; tenants.forEach(t => tenantMap[t.id] = t.name);
 
     document.getElementById('stats').innerHTML =
       '<div class="stat"><div class="num">' + users.length + '</div><div class="label">ユーザー数</div></div>' +
       '<div class="stat"><div class="num">' + tenants.length + '</div><div class="label">テナント数</div></div>' +
-      '<div class="stat"><div class="num">' + users.filter(u => u.role === 'admin').length + '</div><div class="label">アドミン数</div></div>';
+      '<div class="stat"><div class="num">' + activeAdmins + '</div><div class="label">有効アドミン数</div></div>';
 
     document.getElementById('userList').innerHTML = users.map(u => {
       const statusClass = u.status === 'active' ? 'badge-active' : u.status === 'deleted' ? 'badge-deleted' : 'badge-inactive';
