@@ -138,6 +138,37 @@ When supporting external LPs:
 
 See `docs/OPERATIONAL_WORKFLOW.md` for detailed flow.
 
+## Merge Control Rules
+
+### Parallel PR policy
+- UI layer (pages, routes, shared components) changes are **serial only**
+- API-only, migration-only, docs-only changes may run in parallel if files don't overlap
+- If staging advances after a PR is created, that PR must be **closed and regenerated** from current staging — never merge a stale PR
+
+### Stale PR handling
+- A PR is stale if staging/main received other merges after the PR branch was created
+- Stale PRs that touch page/route/shared files: **close and regenerate**
+- Stale PRs that touch isolated files (migration, adapter): rebase or regenerate
+
+### PR scope enforcement
+- Each PR must only change files within the Issue scope
+- Out-of-scope file changes (especially page/route/shared) are grounds for rejection
+- If a Codex PR includes unrelated file diffs, close it and regenerate with tighter constraints
+
+### Merge gate checklist
+Before merging any PR, verify:
+1. **Scope**: only Issue-scoped files changed
+2. **Freshness**: based on latest staging, no stale diffs
+3. **Non-regression**: no existing error handling, loading states, or UI behavior reverted
+4. **Deploy**: staging deploy succeeds
+5. **Smoke test**: /health + affected dashboard pages load correctly
+
+### UI stabilization phase rules
+When in UI stabilization/smoke-test phase:
+- No new feature PRs touching page/route files
+- 1 Issue → 1 PR → 1 merge → 1 staging verify → next
+- All pending feature PRs for UI are frozen until stabilization completes
+
 ## Definition of Done
 
 A task is not done unless:
@@ -148,6 +179,9 @@ A task is not done unless:
 - logs are available for debugging
 - no secret handling regressions introduced
 - Cloudflare preview build confirmed
+- **no existing UI states (loading/error/empty) reverted**
+- **PR is based on latest staging**
+- **out-of-scope file changes are absent**
 
 ## Code Style
 
