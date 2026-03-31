@@ -88,6 +88,30 @@ export class AdminService {
     ).bind(userId).run();
   }
 
+  async updateUser(userId: string, input: { password?: string; email?: string }): Promise<SafeUser> {
+    const user = await this.db.prepare('SELECT id, role FROM users WHERE id = ?').bind(userId).first<{ id: string; role: string }>();
+    if (!user) throw new Error('User not found');
+
+    if (input.password) {
+      if (input.password.length < 8) throw new Error('Password must be at least 8 characters');
+      const hash = await this.authService.hashPassword(input.password);
+      await this.db.prepare(
+        "UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?"
+      ).bind(hash, userId).run();
+    }
+
+    if (input.email !== undefined) {
+      await this.db.prepare(
+        "UPDATE users SET email = ?, updated_at = datetime('now') WHERE id = ?"
+      ).bind(input.email || null, userId).run();
+    }
+
+    const updated = await this.db.prepare(
+      'SELECT id, tenant_id, role, login_id, email, status, last_login_at FROM users WHERE id = ?'
+    ).bind(userId).first<SafeUser>();
+    return updated!;
+  }
+
   async listUsers(): Promise<SafeUser[]> {
     const results = await this.db.prepare(
       'SELECT id, tenant_id, role, login_id, email, status, last_login_at FROM users ORDER BY created_at DESC'
