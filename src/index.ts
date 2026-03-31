@@ -1,5 +1,7 @@
 import { generatePlan } from './ai/engine';
-import type { AiChatRequest, ChatMessage, SlotValue } from './ai/types';
+import type { AiChatRequest } from './ai/types';
+import { TrackedLinkAdapter } from './adapters/tracked-link';
+import type { CreateTrackedLinkInput } from './adapters/tracked-link';
 
 export interface Env {
   DB: D1Database;
@@ -25,47 +27,19 @@ export default {
     let response: Response;
 
     if (url.pathname === '/health') {
-      response = Response.json({
-        status: 'ok',
-        environment: env.ENVIRONMENT,
-        timestamp: new Date().toISOString(),
-      });
+      response = Response.json({ status: 'ok', environment: env.ENVIRONMENT, timestamp: new Date().toISOString() });
     } else if (url.pathname === '/') {
-      response = Response.json({
-        name: 'lstep-ai-api',
-        environment: env.ENVIRONMENT,
-        version: '0.4.1',
-      });
+      response = Response.json({ name: 'lstep-ai-api', environment: env.ENVIRONMENT, version: '0.5.0' });
     } else if (url.pathname === '/api/ai/test') {
-      if (request.method === 'GET') {
-        response = await handleAiTest(new Request(request.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: 'hello' }),
-        }), env);
-      } else if (request.method === 'POST') {
-        response = await handleAiTest(request, env);
-      } else {
-        response = Response.json({ error: 'method not allowed' }, { status: 405 });
-      }
+      response = await handleAiTest(request, env);
     } else if (url.pathname === '/api/ai/chat') {
-      if (request.method === 'GET') {
-        response = await handleAiChat(new Request(request.url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: url.searchParams.get('q') || '新規友だち向けに3日ステップを作って',
-          }),
-        }), env);
-      } else if (request.method === 'POST') {
-        response = await handleAiChat(request, env);
-      } else {
-        response = Response.json({ error: 'method not allowed' }, { status: 405 });
-      }
+      response = await handleAiChatRoute(request, url, env);
+    } else if (url.pathname === '/api/tracked-links') {
+      response = await handleTrackedLinks(request, env);
+    } else if (url.pathname.startsWith('/t/')) {
+      response = await handleRedirect(request, url, env);
     } else if (url.pathname === '/chat') {
-      response = new Response(getChatHtml(), {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      });
+      response = new Response(getChatHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
     } else {
       response = Response.json({ error: 'not found' }, { status: 404 });
     }
@@ -74,64 +48,96 @@ export default {
     for (const [key, value] of Object.entries(corsHeaders)) {
       newHeaders.set(key, value);
     }
-    return new Response(response.body, {
-      status: response.status,
-      headers: newHeaders,
-    });
+    return new Response(response.body, { status: response.status, headers: newHeaders });
   },
 };
 
+// --- AI Test ---
 async function handleAiTest(request: Request, env: Env): Promise<Response> {
-  if (!env.OPENAI_API_KEY) {
-    return Response.json({ status: 'error', message: 'OPENAI_API_KEY not configured' }, { status: 503 });
+  if (request.method === 'GET') {
+    return callOpenAI(env, 'hello');
   }
+  if (request.method !== 'POST') return Response.json({ error: 'method not allowed' }, { status: 405 });
+  if (!env.OPENAI_API_KEY) return Response.json({ status: 'error', message: 'OPENAI_API_KEY not configured' }, { status: 503 });
   let body: { message?: string };
-  try { body = await request.json(); } catch {
-    return Response.json({ status: 'error', message: 'Invalid JSON body' }, { status: 400 });
-  }
+  try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON body' }, { status: 400 }); }
+  return callOpenAI(env, body.message || 'hello');
+}
+
+async function callOpenAI(env: Env, message: string): Promise<Response> {
+  if (!env.OPENAI_API_KEY) return Response.json({ status: 'error', message: 'OPENAI_API_KEY not configured' }, { status: 503 });
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${env.OPENAI_API_KEY}` },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: 'You are a helpful assistant for LINE step delivery operations. Reply briefly in the same language as the user.' },
-          { role: 'user', content: body.message || 'hello' },
-        ],
-        max_tokens: 200,
-      }),
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'system', content: 'You are a helpful assistant. Reply briefly in the same language as the user.' }, { role: 'user', content: message }], max_tokens: 200 }),
     });
-    if (!response.ok) {
-      const errorText = await response.text();
-      return Response.json({ status: 'error', message: `OpenAI API error: ${response.status}`, detail: errorText }, { status: 502 });
-    }
-    const data = await response.json() as { choices: Array<{ message: { content: string } }>; usage: Record<string, unknown> };
+    if (!res.ok) { const t = await res.text(); return Response.json({ status: 'error', message: `OpenAI: ${res.status}`, detail: t }, { status: 502 }); }
+    const data = await res.json() as { choices: Array<{ message: { content: string } }>; usage: Record<string, unknown> };
     return Response.json({ status: 'ok', response: data.choices[0]?.message?.content || '', usage: data.usage });
-  } catch (err) {
-    return Response.json({ status: 'error', message: `Request failed: ${err instanceof Error ? err.message : String(err)}` }, { status: 502 });
+  } catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 502 }); }
+}
+
+// --- AI Chat ---
+async function handleAiChatRoute(request: Request, url: URL, env: Env): Promise<Response> {
+  if (request.method === 'GET') {
+    return handleAiChat(new Request(request.url, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: url.searchParams.get('q') || '新規友だち向けに3日ステップを作って' }),
+    }), env);
   }
+  if (request.method === 'POST') return handleAiChat(request, env);
+  return Response.json({ error: 'method not allowed' }, { status: 405 });
 }
 
 async function handleAiChat(request: Request, env: Env): Promise<Response> {
-  if (!env.OPENAI_API_KEY) {
-    return Response.json({ status: 'error', message: 'OPENAI_API_KEY not configured' }, { status: 503 });
-  }
+  if (!env.OPENAI_API_KEY) return Response.json({ status: 'error', message: 'OPENAI_API_KEY not configured' }, { status: 503 });
   let body: AiChatRequest;
-  try { body = await request.json(); } catch {
-    return Response.json({ status: 'error', message: 'Invalid JSON body' }, { status: 400 });
-  }
-  if (!body.message) {
-    return Response.json({ status: 'error', message: 'Missing required field: message' }, { status: 400 });
-  }
+  try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON body' }, { status: 400 }); }
+  if (!body.message) return Response.json({ status: 'error', message: 'Missing required field: message' }, { status: 400 });
   try {
     const plan = await generatePlan(body, env.OPENAI_API_KEY);
     return Response.json({ status: 'ok', ...plan });
-  } catch (err) {
-    return Response.json({ status: 'error', message: `Plan generation failed: ${err instanceof Error ? err.message : String(err)}` }, { status: 502 });
-  }
+  } catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 502 }); }
 }
 
+// --- Tracked Links ---
+async function handleTrackedLinks(request: Request, env: Env): Promise<Response> {
+  const adapter = new TrackedLinkAdapter(env.DB);
+
+  if (request.method === 'GET') {
+    const links = await adapter.list();
+    return Response.json({ status: 'ok', links });
+  }
+
+  if (request.method === 'POST') {
+    let input: CreateTrackedLinkInput;
+    try { input = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON body' }, { status: 400 }); }
+    try {
+      const link = await adapter.create(input);
+      return Response.json({ status: 'ok', link, tracking_url: `/t/${link.id}` }, { status: 201 });
+    } catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
+  }
+
+  return Response.json({ error: 'method not allowed' }, { status: 405 });
+}
+
+// --- Redirect + Click tracking ---
+async function handleRedirect(request: Request, url: URL, env: Env): Promise<Response> {
+  const linkId = url.pathname.replace('/t/', '');
+  if (!linkId) return Response.json({ error: 'missing link id' }, { status: 400 });
+
+  const adapter = new TrackedLinkAdapter(env.DB);
+  const link = await adapter.getById(linkId);
+  if (!link) return Response.json({ error: 'link not found' }, { status: 404 });
+
+  // Record click asynchronously
+  try { await adapter.recordClick(linkId, request); } catch { /* best effort */ }
+
+  return Response.redirect(link.destination_url, 302);
+}
+
+// --- Chat UI HTML ---
 function getChatHtml(): string {
   return `<!DOCTYPE html>
 <html lang="ja">
@@ -181,7 +187,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 </style>
 </head>
 <body>
-<div class="header">lstep AI Chat <span>v0.4 multi-turn</span></div>
+<div class="header">lstep AI Chat <span>v0.5</span></div>
 <div class="chat-area" id="chatArea">
   <div class="msg ai">
     LINEステップ配信の設定をお手伝いします。<br><br>
@@ -198,138 +204,73 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 const chatArea = document.getElementById('chatArea');
 const msgInput = document.getElementById('msgInput');
 const sendBtn = document.getElementById('sendBtn');
-
 let conversationHistory = [];
 let accumulatedSlots = [];
-let currentIntent = null;
 
-msgInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.isComposing) sendMessage();
-});
+msgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) sendMessage(); });
 
 async function sendMessage() {
   const msg = msgInput.value.trim();
   if (!msg) return;
-
   addMsg(msg, 'user');
   conversationHistory.push({ role: 'user', content: msg });
   msgInput.value = '';
   msgInput.placeholder = '指示を入力...';
   sendBtn.disabled = true;
-
   const loadingEl = document.createElement('div');
   loadingEl.className = 'msg ai';
   loadingEl.innerHTML = '<div class="loading"><span></span><span></span><span></span></div>';
   chatArea.appendChild(loadingEl);
   chatArea.scrollTop = chatArea.scrollHeight;
-
   try {
-    const res = await fetch('/api/ai/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: msg,
-        history: conversationHistory.slice(0, -1),
-        accumulated_slots: accumulatedSlots,
-      }),
-    });
+    const res = await fetch('/api/ai/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg, history: conversationHistory.slice(0, -1), accumulated_slots: accumulatedSlots }) });
     const data = await res.json();
     chatArea.removeChild(loadingEl);
-
     if (data.status === 'ok') {
-      currentIntent = data.intent;
       accumulatedSlots = (data.slots || []).filter(s => s.value != null);
-      const aiSummary = formatAiSummary(data);
-      conversationHistory.push({ role: 'assistant', content: aiSummary });
+      conversationHistory.push({ role: 'assistant', content: 'Intent: ' + data.intent });
       addPlanMsg(data);
-    } else {
-      addMsg('Error: ' + (data.message || 'Unknown error'), 'ai');
-    }
-  } catch (err) {
-    chatArea.removeChild(loadingEl);
-    addMsg('Error: ' + err.message, 'ai');
-  }
+    } else { addMsg('Error: ' + (data.message || 'Unknown error'), 'ai'); }
+  } catch (err) { chatArea.removeChild(loadingEl); addMsg('Error: ' + err.message, 'ai'); }
   sendBtn.disabled = false;
   chatArea.scrollTop = chatArea.scrollHeight;
 }
 
-function formatAiSummary(data) {
-  let s = 'Intent: ' + data.intent + '\\n';
-  const filled = (data.slots || []).filter(sl => sl.value != null);
-  if (filled.length) s += 'Slots: ' + filled.map(sl => sl.name + '=' + sl.value).join(', ') + '\\n';
-  if (data.missing_slots && data.missing_slots.length) s += 'Missing: ' + data.missing_slots.map(sl => sl.name).join(', ');
-  return s;
-}
-
-function addMsg(text, cls) {
-  const el = document.createElement('div');
-  el.className = 'msg ' + cls;
-  el.textContent = text;
-  chatArea.appendChild(el);
-  chatArea.scrollTop = chatArea.scrollHeight;
-}
-
-function fillQuestion(q) {
-  msgInput.value = '';
-  msgInput.focus();
-  msgInput.placeholder = q;
-}
+function addMsg(text, cls) { const el = document.createElement('div'); el.className = 'msg ' + cls; el.textContent = text; chatArea.appendChild(el); chatArea.scrollTop = chatArea.scrollHeight; }
+function fillQuestion(q) { msgInput.value = ''; msgInput.focus(); msgInput.placeholder = q; }
 
 function addPlanMsg(data) {
   const el = document.createElement('div');
   el.className = 'msg ai';
-
-  const allSlots = data.slots || [];
-  const filled = allSlots.filter(s => s.value != null);
+  const filled = (data.slots || []).filter(s => s.value != null);
   const totalRequired = filled.length + (data.missing_slots || []).length;
   const progress = totalRequired > 0 ? Math.round((filled.length / totalRequired) * 100) : 0;
-
   let html = '<div class="intent-badge">' + esc(data.intent) + ' (' + Math.round((data.confidence || 0) * 100) + '%)</div>';
-
   html += '<div class="progress-bar"><div class="progress-fill" style="width:' + progress + '%"></div></div>';
   html += '<div style="font-size:11px;color:#666;margin-top:2px">' + filled.length + '/' + totalRequired + ' 項目完了</div>';
-
   if (filled.length > 0) {
     html += '<div class="slots-section"><h4>&#x2705; 検出された情報</h4>';
-    filled.forEach(s => {
-      html += '<div class="slot-item"><span class="slot-name">' + esc(s.name) + ':</span><span class="slot-value">' + esc(String(s.value)) + '</span></div>';
-    });
+    filled.forEach(s => { html += '<div class="slot-item"><span class="slot-name">' + esc(s.name) + ':</span><span class="slot-value">' + esc(String(s.value)) + '</span></div>'; });
     html += '</div>';
   }
-
   if (data.missing_slots && data.missing_slots.length > 0) {
     html += '<div class="missing-section"><h4>&#x2753; 不足している情報</h4>';
-    data.missing_slots.forEach(s => {
-      html += '<div class="missing-q" onclick="fillQuestion(\\''+esc(s.ask_question).replace(/'/g,"\\\\'")+'\\')">・' + esc(s.ask_question) + '</div>';
-    });
+    data.missing_slots.forEach(s => { html += '<div class="missing-q" onclick="fillQuestion(\\'' + esc(s.ask_question).replace(/'/g, "\\\\'") + '\\')">・' + esc(s.ask_question) + '</div>'; });
     html += '</div>';
   }
-
-  if (data.plan) {
-    html += '<div class="plan-section"><h4>&#x1f4cb; 実行プラン</h4>';
-    html += '<div class="plan-desc">' + esc(data.plan.description) + '</div>';
-    html += '</div>';
-  }
-
-  if (data.is_complete) {
-    html += '<div class="confirm-badge complete" onclick="confirmPlan()">&#x2705; この内容で実行する</div>';
-  } else if (data.requires_confirmation) {
-    html += '<div class="confirm-badge required">&#x1f512; 情報が揃ったら確認へ</div>';
-  } else {
-    html += '<div class="confirm-badge not-required">&#x2705; 確認不要</div>';
-  }
-
+  if (data.plan) { html += '<div class="plan-section"><h4>&#x1f4cb; 実行プラン</h4><div class="plan-desc">' + esc(data.plan.description) + '</div></div>'; }
+  if (data.is_complete) { html += '<div class="confirm-badge complete" onclick="confirmPlan()">&#x2705; この内容で実行する</div>'; }
+  else if (data.requires_confirmation) { html += '<div class="confirm-badge required">&#x1f512; 情報が揃ったら確認へ</div>'; }
+  else { html += '<div class="confirm-badge not-required">&#x2705; 確認不要</div>'; }
   el.innerHTML = html;
   chatArea.appendChild(el);
 }
 
 function confirmPlan() {
-  addMsg('[確認] 実行を承認しました。（※現在はpreview-onlyモードです。実際の実行は次のフェーズで実装されます。）', 'ai');
-  conversationHistory = [];
-  accumulatedSlots = [];
-  currentIntent = null;
+  addMsg('[確認] 実行を承認しました。（※現在はpreview-onlyモードです。）', 'ai');
+  conversationHistory = []; accumulatedSlots = [];
 }
-
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 </script>
 </body>
