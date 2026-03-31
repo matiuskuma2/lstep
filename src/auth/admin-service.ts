@@ -58,6 +58,36 @@ export class AdminService {
     };
   }
 
+  async updateUserStatus(userId: string, status: 'active' | 'inactive', requestingUserId: string): Promise<SafeUser> {
+    if (userId === requestingUserId) {
+      throw new Error('Cannot change your own status');
+    }
+    const user = await this.db.prepare('SELECT id, role FROM users WHERE id = ?').bind(userId).first<{ id: string; role: string }>();
+    if (!user) throw new Error('User not found');
+
+    await this.db.prepare(
+      "UPDATE users SET status = ?, updated_at = datetime('now') WHERE id = ?"
+    ).bind(status, userId).run();
+
+    const updated = await this.db.prepare(
+      'SELECT id, tenant_id, role, login_id, email, status, last_login_at FROM users WHERE id = ?'
+    ).bind(userId).first<SafeUser>();
+    return updated!;
+  }
+
+  async deleteUser(userId: string, requestingUserId: string): Promise<void> {
+    if (userId === requestingUserId) {
+      throw new Error('Cannot delete yourself');
+    }
+    const user = await this.db.prepare('SELECT id, role FROM users WHERE id = ?').bind(userId).first<{ id: string; role: string }>();
+    if (!user) throw new Error('User not found');
+    if (user.role === 'super_admin') throw new Error('Cannot delete a super_admin');
+
+    await this.db.prepare(
+      "UPDATE users SET status = 'deleted', updated_at = datetime('now') WHERE id = ?"
+    ).bind(userId).run();
+  }
+
   async listUsers(): Promise<SafeUser[]> {
     const results = await this.db.prepare(
       'SELECT id, tenant_id, role, login_id, email, status, last_login_at FROM users ORDER BY created_at DESC'
