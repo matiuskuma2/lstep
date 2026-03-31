@@ -1,6 +1,7 @@
 import { generatePlan } from './ai/engine';
 import type { BotKnowledgeContext } from './ai/engine';
 import type { AiChatRequest } from './ai/types';
+import { ExecutionLogAdapter } from './adapters/execution-log';
 import { TrackedLinkAdapter } from './adapters/tracked-link';
 import type { CreateTrackedLinkInput } from './adapters/tracked-link';
 import { AuthService } from './auth/service';
@@ -20,6 +21,7 @@ import { BroadcastAdapter } from './adapters/broadcast';
 import { FormAdapter } from './adapters/form';
 import { BotAdapter, KnowledgeAdapter } from './adapters/bot-knowledge';
 import { getBotsPageHtml, getKnowledgePageHtml } from './pages/bot-knowledge';
+import { getAiLogsPageHtml } from './pages/ai-logs';
 
 export interface Env {
   DB: D1Database;
@@ -75,6 +77,8 @@ export default {
         response = await handleKnowledge(request, env);
       } else if (url.pathname === '/api/scenarios' || url.pathname.startsWith('/api/scenarios/')) {
         response = await handleScenarios(request, url, env);
+      } else if (url.pathname === '/api/ai/logs') {
+        response = await handleAiLogs(request, env);
       } else if (url.pathname === '/api/ai/test') {
         response = await handleAiTest(request, env);
       } else if (url.pathname === '/api/ai/chat') {
@@ -109,6 +113,8 @@ export default {
         response = new Response(getBotsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/knowledge') {
         response = new Response(getKnowledgePageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      } else if (url.pathname === '/dashboard/ai-logs') {
+        response = new Response(getAiLogsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/setup') {
         response = new Response(getSetupHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else {
@@ -543,24 +549,48 @@ async function handleAiChatRoute(request: Request, url: URL, env: Env): Promise<
   if (request.method === 'POST') return handleAiChat(request, env);
   return Response.json({ error: 'method not allowed' }, { status: 405 });
 }
+async function handleAiLogs(request: Request, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin');
+  if (denied) return denied;
+  const adapter = new ExecutionLogAdapter(env.DB);
+  const logs = await adapter.list(100);
+  return Response.json({ status: 'ok', logs });
+}
+
 async function handleAiChat(request: Request, env: Env): Promise<Response> {
   if (!env.OPENAI_API_KEY) return Response.json({ status: 'error', message: 'OPENAI_API_KEY not configured' }, { status: 503 });
   let body: AiChatRequest;
   try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON body' }, { status: 400 }); }
   if (!body.message) return Response.json({ status: 'error', message: 'Missing required field: message' }, { status: 400 });
+
+  const logAdapter = new ExecutionLogAdapter(env.DB);
+  let auth: any = null;
+  if (env.ADMIN_JWT_SECRET) { auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET); }
+
   try {
     let botKnowledge: BotKnowledgeContext | undefined;
     if (body.bot_id && env.DB) {
       const botAdapter = new BotAdapter(env.DB);
       const bot = await botAdapter.getWithKnowledge(body.bot_id);
-      if (bot) {
-        botKnowledge = { bot, knowledge: bot.knowledge };
-      }
+      if (bot) { botKnowledge = { bot, knowledge: bot.knowledge }; }
     }
     const plan = await generatePlan(body, env.OPENAI_API_KEY, botKnowledge);
+    try {
+      await logAdapter.record({
+        tenant_id: auth?.tenant_id, user_id: auth?.user_id, bot_id: body.bot_id,
+        request_message: body.message, intent: plan.intent, confidence: plan.confidence,
+        slots: plan.slots, missing_slots: plan.missing_slots, plan: plan.plan,
+        is_complete: plan.is_complete,
+      });
+    } catch {}
     return Response.json({ status: 'ok', ...plan });
   }
-  catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 502 }); }
+  catch (err) {
+    try { await logAdapter.record({ tenant_id: auth?.tenant_id, user_id: auth?.user_id, bot_id: body.bot_id, request_message: body.message, error: String(err) }); } catch {}
+    return Response.json({ status: 'error', message: String(err) }, { status: 502 });
+  }
 }
 
 // --- Tracked Links ---
