@@ -199,3 +199,62 @@ A task is not done unless:
 - Multi-account/BAN recovery logic is sensitive
 - External LP measurement is less reliable than internal LP hosting
 - AI token cost must be measured early
+
+## Branch & Deploy Rules
+
+### Branch flow
+- `feature/*` → `staging` (PR required, auto-merge OK if merge gate passes)
+- `staging` → `main` (manual approval required)
+- **Never push directly to main** for implementation code
+- main direct push is allowed only for workflow files (codex-implement.yml, deploy-worker.yml)
+
+### Branch naming
+- Codex branches: `feature/issue-{N}-codex` (one per issue)
+- Manual branches: `feature/issue-{N}-{description}`
+- **Never reuse a closed PR's branch** — delete and create fresh
+
+### Stale branch prevention
+- Before creating a Codex branch, check if same-name branch already exists
+- If it exists, delete it first or use a unique suffix
+- Codex workflow must detect existing open PRs for the same issue
+
+### Deploy flow
+- staging push triggers auto-deploy via deploy-worker.yml
+- After deploy, verify `/health` returns 200
+- Smoke test affected pages before marking issue as done
+
+## Codex Workflow Rules
+
+### Execution
+- 1 Issue = 1 PR = 1 branch
+- Codex workflow must comment results on the issue:
+  - branch creation: PASS/FAIL
+  - commit/push: PASS/FAIL
+  - PR creation: PASS/FAIL + URL
+  - Or: "no changes produced"
+- If any step fails, comment the failing step name
+
+### Re-trigger safety
+- Before re-triggering, close existing PRs for the same issue
+- Delete stale branches from previous runs
+- Never merge a PR created from an outdated staging base
+
+## Shared UI Architecture Rules
+
+### Shell template
+- `getShellHtml` must exist in exactly **one** shared location
+- All dashboard pages import and use the shared shell
+- Common script (authHeaders, esc, logout, user setup) is defined **before** `${content}`
+- Page-specific scripts go inside content
+
+### Fetch pattern
+- All data-loading functions must be `async` with `try-catch`
+- Check `!r.ok` before parsing JSON
+- Show error message on failure (never stay on "読み込み中...")
+- Show "データがありません" on empty results
+- Never `console.error` only — always update UI
+
+### Template literal safety
+- Use `\\\\\'` (not `\\'`) for quotes inside onclick handlers in template literals
+- Validate all page scripts with `new Function()` before merging
+- Test authHeaders definition order with character index comparison
