@@ -18,6 +18,7 @@ import { FriendAdapter } from './adapters/friend';
 import { BroadcastAdapter } from './adapters/broadcast';
 import { FormAdapter } from './adapters/form';
 import { BotAdapter, KnowledgeAdapter } from './adapters/bot-knowledge';
+import { getBotsPageHtml, getKnowledgePageHtml } from './pages/bot-knowledge';
 
 export interface Env {
   DB: D1Database;
@@ -103,6 +104,10 @@ export default {
         response = new Response(getBroadcastsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/forms') {
         response = new Response(getFormsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      } else if (url.pathname === '/dashboard/bots') {
+        response = new Response(getBotsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      } else if (url.pathname === '/dashboard/knowledge') {
+        response = new Response(getKnowledgePageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/setup') {
         response = new Response(getSetupHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else {

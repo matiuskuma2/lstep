@@ -1,0 +1,181 @@
+export function getBotsPageHtml(): string {
+  return getShellHtml('bots', `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2>Bot\u7ba1\u7406</h2>
+      <button class="btn btn-primary" onclick="document.getElementById('cf').style.display=document.getElementById('cf').style.display==='none'?'block':'none'">+ \u65b0\u898f\u4f5c\u6210</button>
+    </div>
+    <div id="cf" style="display:none" class="card">
+      <h3 style="font-size:15px;margin-bottom:12px">Bot\u4f5c\u6210</h3>
+      <div class="msg error" id="cErr"></div><div class="msg success" id="cSuc"></div>
+      <div class="form-row">
+        <input type="text" id="botName" placeholder="Bot\u540d">
+        <input type="text" id="botStrategy" placeholder="\u6226\u7565\uff08\u5bfe\u8c61\u3084\u65b9\u91dd\uff09">
+        <select id="botTone"><option value="professional">\u30d7\u30ed</option><option value="casual">\u30ab\u30b8\u30e5\u30a2\u30eb</option><option value="friendly">\u30d5\u30ec\u30f3\u30c9\u30ea\u30fc</option></select>
+        <button class="btn btn-primary" onclick="createBot()">\u4f5c\u6210</button>
+      </div>
+      <div class="form-row" style="margin-top:8px">
+        <input type="text" id="botGoal" placeholder="\u76ee\u6a19\uff08\u4efb\u610f\uff09">
+        <input type="text" id="botTarget" placeholder="\u30bf\u30fc\u30b2\u30c3\u30c8\uff08\u4efb\u610f\uff09">
+        <input type="text" id="botDesc" placeholder="\u8aac\u660e\uff08\u4efb\u610f\uff09">
+      </div>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>Bot\u540d</th><th>\u6226\u7565</th><th>\u30c8\u30fc\u30f3</th><th>\u30b9\u30c6\u30fc\u30bf\u30b9</th><th>\u4f5c\u6210\u65e5</th></tr></thead>
+        <tbody id="botList"><tr><td colspan="5">\u8aad\u307f\u8fbc\u307f\u4e2d...</td></tr></tbody>
+      </table>
+    </div>
+    <div id="detailPanel" style="display:none" class="card">
+      <h3 id="detailTitle" style="font-size:16px;margin-bottom:8px"></h3>
+      <div id="detailInfo" style="margin-bottom:12px;font-size:13px;color:#666"></div>
+      <h4 style="font-size:14px;margin-bottom:8px">\u7d10\u4ed8\u3051\u6e08\u307fKnowledge</h4>
+      <div id="knowledgeBindings" style="margin-bottom:12px">\u8aad\u307f\u8fbc\u307f\u4e2d...</div>
+      <div class="form-row">
+        <select id="knowledgeSelect"><option value="">\u9078\u629e...</option></select>
+        <button class="btn btn-primary" onclick="bindKnowledge()" style="padding:6px 14px;font-size:12px">\u7d10\u4ed8\u3051</button>
+      </div>
+    </div>
+    <script>
+    let currentBotId = null;
+    async function loadBots() {
+      try {
+        const r = await fetch('/api/bots', {headers:authHeaders()});
+        if (!r.ok) { document.getElementById('botList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u30c7\u30fc\u30bf\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\uff08'+r.status+'\uff09</td></tr>'; return; }
+        const d = await r.json();
+        const bots = d.bots || [];
+        if (!bots.length) { document.getElementById('botList').innerHTML = '<tr><td colspan="5" style="color:#999">\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093</td></tr>'; return; }
+        document.getElementById('botList').innerHTML = bots.map(b =>
+          '<tr style="cursor:pointer" onclick="showBot(\\''+b.id+'\\')"><td>'+esc(b.name)+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">'+esc(b.strategy)+'</td><td>'+b.tone+'</td><td><span class="badge badge-active">'+b.status+'</span></td><td>'+b.created_at.substring(0,10)+'</td></tr>'
+        ).join('');
+      } catch(e) {
+        const message = e instanceof Error ? e.message : String(e);
+        document.getElementById('botList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u8aad\u307f\u8fbc\u307f\u30a8\u30e9\u30fc: '+message+'</td></tr>';
+      }
+    }
+    async function createBot() {
+      const er=document.getElementById('cErr'),su=document.getElementById('cSuc');
+      er.style.display='none';su.style.display='none';
+      const name=document.getElementById('botName').value;
+      const strategy=document.getElementById('botStrategy').value;
+      if(!name||!strategy){er.textContent='Bot\u540d\u3068\u6226\u7565\u306f\u5fc5\u9808';er.style.display='block';return;}
+      try {
+        const r=await fetch('/api/bots',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,strategy,tone:document.getElementById('botTone').value,goal:document.getElementById('botGoal').value||undefined,target_audience:document.getElementById('botTarget').value||undefined,description:document.getElementById('botDesc').value||undefined})});
+        const d=await r.json();
+        if(d.status==='ok'){su.textContent='Bot\u3092\u4f5c\u6210\u3057\u307e\u3057\u305f';su.style.display='block';document.getElementById('botName').value='';document.getElementById('botStrategy').value='';loadBots();}
+        else{er.textContent=d.message||'\u4f5c\u6210\u5931\u6557';er.style.display='block';}
+      }catch(e){er.textContent=e.message;er.style.display='block';}
+    }
+    async function showBot(id) {
+      currentBotId=id;
+      try {
+        const r=await fetch('/api/bots/'+id,{headers:authHeaders()});
+        const d=await r.json();
+        if(d.status!=='ok') return;
+        const b=d.bot;
+        document.getElementById('detailTitle').textContent=b.name;
+        document.getElementById('detailInfo').innerHTML='\u6226\u7565: '+esc(b.strategy)+'<br>\u30c8\u30fc\u30f3: '+b.tone+(b.goal?' | \u76ee\u6a19: '+esc(b.goal):'')+(b.target_audience?' | \u30bf\u30fc\u30b2\u30c3\u30c8: '+esc(b.target_audience):'');
+        const kl=b.knowledge||[];
+        document.getElementById('knowledgeBindings').innerHTML=kl.length?kl.map(k=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0"><span>'+esc(k.title)+' <span style="color:#999;font-size:11px">['+k.category+']</span></span><button class="btn" style="padding:2px 8px;font-size:11px;background:#ffebee;color:#c62828" onclick="unbindKnowledge(\\''+k.id+'\\')">\u89e3\u9664</button></div>').join(''):'<span style="color:#999">\u7d10\u4ed8\u3051\u306a\u3057</span>';
+        document.getElementById('detailPanel').style.display='block';
+        loadKnowledgeSelect();
+      }catch(e){console.error(e);}
+    }
+    async function loadKnowledgeSelect() {
+      try {
+        const r=await fetch('/api/knowledge',{headers:authHeaders()});
+        const d=await r.json();
+        const items=d.knowledge||[];
+        const sel=document.getElementById('knowledgeSelect');
+        sel.innerHTML='<option value="">\u9078\u629e...</option>'+items.map(k=>'<option value="'+k.id+'">'+esc(k.title)+'</option>').join('');
+      }catch(e){console.error(e);}
+    }
+    async function bindKnowledge() {
+      const kid=document.getElementById('knowledgeSelect').value;
+      if(!kid||!currentBotId) return;
+      await fetch('/api/bots/'+currentBotId+'/knowledge',{method:'POST',headers:authHeaders(),body:JSON.stringify({knowledge_id:kid})});
+      showBot(currentBotId);
+    }
+    async function unbindKnowledge(kid) {
+      if(!currentBotId) return;
+      await fetch('/api/bots/'+currentBotId+'/knowledge/'+kid,{method:'DELETE',headers:authHeaders()});
+      showBot(currentBotId);
+    }
+    loadBots();
+    </script>
+  `);
+}
+
+export function getKnowledgePageHtml(): string {
+  return getShellHtml('knowledge', `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2>Knowledge\u7ba1\u7406</h2>
+      <button class="btn btn-primary" onclick="document.getElementById('cf').style.display=document.getElementById('cf').style.display==='none'?'block':'none'">+ \u65b0\u898f\u4f5c\u6210</button>
+    </div>
+    <div id="cf" style="display:none" class="card">
+      <h3 style="font-size:15px;margin-bottom:12px">Knowledge\u4f5c\u6210</h3>
+      <div class="msg error" id="cErr"></div><div class="msg success" id="cSuc"></div>
+      <div class="form-row">
+        <input type="text" id="kTitle" placeholder="\u30bf\u30a4\u30c8\u30eb">
+        <select id="kCategory"><option value="general">\u4e00\u822c</option><option value="product">\u88fd\u54c1</option><option value="faq">FAQ</option><option value="policy">\u30dd\u30ea\u30b7\u30fc</option></select>
+        <button class="btn btn-primary" onclick="createKnowledge()">\u4f5c\u6210</button>
+      </div>
+      <div style="margin-top:8px">
+        <textarea id="kContent" placeholder="\u5185\u5bb9\uff08\u5fc5\u9808\uff09" style="width:100%;min-height:80px;padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:13px;outline:none;resize:vertical"></textarea>
+      </div>
+    </div>
+    <div class="card">
+      <table>
+        <thead><tr><th>\u30bf\u30a4\u30c8\u30eb</th><th>\u30ab\u30c6\u30b4\u30ea</th><th>\u5185\u5bb9</th><th>\u30b9\u30c6\u30fc\u30bf\u30b9</th><th>\u4f5c\u6210\u65e5</th></tr></thead>
+        <tbody id="kList"><tr><td colspan="5">\u8aad\u307f\u8fbc\u307f\u4e2d...</td></tr></tbody>
+      </table>
+    </div>
+    <script>
+    async function loadKnowledge() {
+      try {
+        const r = await fetch('/api/knowledge', {headers:authHeaders()});
+        if (!r.ok) { document.getElementById('kList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u30c7\u30fc\u30bf\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\uff08'+r.status+'\uff09</td></tr>'; return; }
+        const d = await r.json();
+        const items = d.knowledge || [];
+        if (!items.length) { document.getElementById('kList').innerHTML = '<tr><td colspan="5" style="color:#999">\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093</td></tr>'; return; }
+        document.getElementById('kList').innerHTML = items.map(k =>
+          '<tr><td>'+esc(k.title)+'</td><td><span class="badge badge-active">'+k.category+'</span></td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(k.content.substring(0,80))+'</td><td><span class="badge badge-active">'+k.status+'</span></td><td>'+k.created_at.substring(0,10)+'</td></tr>'
+        ).join('');
+      } catch(e) {
+        const message = e instanceof Error ? e.message : String(e);
+        document.getElementById('kList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u8aad\u307f\u8fbc\u307f\u30a8\u30e9\u30fc: '+message+'</td></tr>';
+      }
+    }
+    async function createKnowledge() {
+      const er=document.getElementById('cErr'),su=document.getElementById('cSuc');
+      er.style.display='none';su.style.display='none';
+      const title=document.getElementById('kTitle').value;
+      const content=document.getElementById('kContent').value;
+      if(!title||!content){er.textContent='\u30bf\u30a4\u30c8\u30eb\u3068\u5185\u5bb9\u306f\u5fc5\u9808';er.style.display='block';return;}
+      try {
+        const r=await fetch('/api/knowledge',{method:'POST',headers:authHeaders(),body:JSON.stringify({title,content,category:document.getElementById('kCategory').value})});
+        const d=await r.json();
+        if(d.status==='ok'){su.textContent='\u4f5c\u6210\u3057\u307e\u3057\u305f';su.style.display='block';document.getElementById('kTitle').value='';document.getElementById('kContent').value='';loadKnowledge();}
+        else{er.textContent=d.message||'\u4f5c\u6210\u5931\u6557';er.style.display='block';}
+      }catch(e){er.textContent=e.message;er.style.display='block';}
+    }
+    loadKnowledge();
+    </script>
+  `);
+}
+
+function getShellHtml(activePage: string, content: string): string {
+  const menuItems = [
+    { id: 'dashboard', label: '\u30c0\u30c3\u30b7\u30e5\u30dc\u30fc\u30c9', icon: '&#x1f4ca;', path: '/dashboard' },
+    { id: 'scenarios', label: '\u30b7\u30ca\u30ea\u30aa\u7ba1\u7406', icon: '&#x1f4e8;', path: '/dashboard/scenarios' },
+    { id: 'bots', label: 'Bot\u7ba1\u7406', icon: '&#x1f916;', path: '/dashboard/bots' },
+    { id: 'knowledge', label: 'Knowledge', icon: '&#x1f4da;', path: '/dashboard/knowledge' },
+    { id: 'friends', label: '\u53cb\u3060\u3061\u7ba1\u7406', icon: '&#x1f465;', path: '/dashboard/friends' },
+    { id: 'tags', label: '\u30bf\u30b0\u7ba1\u7406', icon: '&#x1f3f7;', path: '/dashboard/tags' },
+    { id: 'tracked-links', label: '\u30c8\u30e9\u30c3\u30ad\u30f3\u30b0\u30ea\u30f3\u30af', icon: '&#x1f517;', path: '/dashboard/tracked-links' },
+    { id: 'conversions', label: 'CV\u7ba1\u7406', icon: '&#x1f3af;', path: '/dashboard/conversions' },
+    { id: 'broadcasts', label: '\u914d\u4fe1\u7ba1\u7406', icon: '&#x1f4e2;', path: '/dashboard/broadcasts' },
+    { id: 'forms', label: '\u30d5\u30a9\u30fc\u30e0\u7ba1\u7406', icon: '&#x1f4dd;', path: '/dashboard/forms' },
+  ];
+  const menuHtml = menuItems.map(m => `<a href="${m.path}" class="menu-item ${m.id === activePage ? 'active' : ''}">${m.icon} ${m.label}</a>`).join('\n    ');
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>lchatAI</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f0f2f5;display:flex;height:100vh}.sidebar{width:240px;background:#1a1a2e;color:white;display:flex;flex-direction:column;flex-shrink:0}.sidebar-header{padding:20px;border-bottom:1px solid rgba(255,255,255,.1)}.sidebar-header h1{font-size:20px;color:#06C755}.sidebar-header .tenant{font-size:12px;color:#888;margin-top:4px}.sidebar-menu{flex:1;padding:12px 0;overflow-y:auto}.menu-item{display:flex;align-items:center;gap:10px;padding:10px 20px;color:#aaa;text-decoration:none;font-size:14px;transition:all .2s}.menu-item:hover{background:rgba(255,255,255,.05);color:white}.menu-item.active{background:rgba(6,199,85,.15);color:#06C755;border-right:3px solid #06C755}.sidebar-footer{padding:16px 20px;border-top:1px solid rgba(255,255,255,.1)}.sidebar-footer a{display:block;color:#888;text-decoration:none;font-size:13px;padding:6px 0}.sidebar-footer a:hover{color:white}.main{flex:1;display:flex;flex-direction:column;overflow:hidden}.topbar{background:white;padding:12px 24px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e0e0e0;box-shadow:0 1px 3px rgba(0,0,0,.05)}.topbar .user-area{display:flex;align-items:center;gap:12px;font-size:13px;color:#666}.topbar .logout{color:#c62828;cursor:pointer;font-size:12px}.content{flex:1;padding:24px;overflow-y:auto}.card{background:white;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);padding:20px;margin-bottom:20px}.form-row{display:flex;gap:10px;flex-wrap:wrap}.form-row input,.form-row select{flex:1;min-width:120px;padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:13px;outline:none}.form-row input:focus,.form-row select:focus{border-color:#06C755}.btn{padding:8px 16px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer}.btn-primary{background:#06C755;color:white}.btn-primary:hover{background:#05a648}table{width:100%;border-collapse:collapse;font-size:13px}th{text-align:left;padding:8px 10px;color:#888;border-bottom:2px solid #eee;font-weight:500;font-size:12px}td{padding:8px 10px;border-bottom:1px solid #f0f0f0}tr:hover td{background:#fafafa}.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}.badge-active{background:#e8f5e9;color:#2e7d32}.badge-admin{background:#e3f2fd;color:#1565c0}.msg{font-size:13px;padding:8px 12px;border-radius:8px;margin-bottom:10px;display:none}.msg.error{background:#ffebee;color:#c62828}.msg.success{background:#e8f5e9;color:#2e7d32}</style></head><body><div class="sidebar"><div class="sidebar-header"><h1>lchatAI</h1><div class="tenant" id="tenantName"></div></div><div class="sidebar-menu">${menuHtml}</div><div class="sidebar-footer"><a href="/chat">&#x1f4ac; AI \u30c1\u30e3\u30c3\u30c8</a><a href="/admin" id="superAdminLink" style="display:none">&#x2699; Super Admin</a></div></div><div class="main"><div class="topbar"><div></div><div class="user-area"><span id="userName"></span><span class="logout" onclick="logout()">\u30ed\u30b0\u30a2\u30a6\u30c8</span></div></div><div class="content"><script>const user=JSON.parse(localStorage.getItem('lchatai_user')||'null'),token=localStorage.getItem('lchatai_token');if(!user||!token)window.location.href='/login';if(user){document.getElementById('userName').textContent=user.login_id+' ('+user.role+')';document.getElementById('tenantName').textContent=user.tenant_id?'Tenant: '+user.tenant_id.substring(0,8)+'...':'System';if(user.role==='super_admin')document.getElementById('superAdminLink').style.display='block'}function authHeaders(){return{'Content-Type':'application/json','Authorization':'Bearer '+token}}function logout(){localStorage.removeItem('lchatai_token');localStorage.removeItem('lchatai_user');window.location.href='/login'}function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}</script>${content}</div></div></body></html>`;
+}
