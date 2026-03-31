@@ -41,7 +41,7 @@ export default {
       if (url.pathname === '/health') {
         response = Response.json({ status: 'ok', environment: env.ENVIRONMENT, timestamp: new Date().toISOString() });
       } else if (url.pathname === '/') {
-        response = Response.json({ name: 'lchatAI-api', environment: env.ENVIRONMENT, version: '0.12.0' });
+        response = Response.json({ name: 'lchatAI-api', environment: env.ENVIRONMENT, version: '0.13.0' });
       } else if (url.pathname === '/api/auth/login' && request.method === 'POST') {
         response = await handleLogin(request, env);
       } else if (url.pathname === '/api/auth/me' && request.method === 'GET') {
