@@ -186,10 +186,7 @@ tr:hover td { background: #fafafa; }
     </div>
   </div>
   <div class="content">
-    ${content}
-  </div>
-</div>
-<script>
+    <script>
 const user = JSON.parse(localStorage.getItem('lchatai_user') || 'null');
 const token = localStorage.getItem('lchatai_token');
 if (!user || !token) { window.location.href = '/login'; }
@@ -207,7 +204,10 @@ if (user) {
 function authHeaders() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }; }
 function logout() { localStorage.removeItem('lchatai_token'); localStorage.removeItem('lchatai_user'); window.location.href = '/login'; }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-</script>
+    </script>
+    ${content}
+  </div>
+</div>
 </body>
 </html>`;
 }
