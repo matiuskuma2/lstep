@@ -54,7 +54,7 @@ tr:hover td { background: #fafafa; }
 </head>
 <body>
 <div class="header">
-  <h1>lchatAI Admin</h1>
+  <h1>lchatAI Admin v0.13.0</h1>
   <div class="nav">
     <a href="/dashboard">Dashboard</a>
     <a href="/chat">AI Chat</a>
