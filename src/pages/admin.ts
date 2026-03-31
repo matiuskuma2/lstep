@@ -43,6 +43,11 @@ tr:hover td { background: #fafafa; }
 .modal-actions { display: flex; gap: 12px; justify-content: flex-end; }
 .btn-cancel { background: #eee; color: #333; } .btn-cancel:hover { background: #ddd; }
 .btn-confirm-delete { background: #c62828; color: white; } .btn-confirm-delete:hover { background: #b71c1c; }
+.btn-edit { background: #e3f2fd; color: #1565c0; } .btn-edit:hover { background: #bbdefb; }
+.modal-form label { display: block; font-size: 13px; color: #333; margin-bottom: 4px; font-weight: 500; }
+.modal-form input { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 12px; outline: none; box-sizing: border-box; }
+.modal-form input:focus { border-color: #06C755; }
+.modal-form .hint { font-size: 11px; color: #999; margin-top: -8px; margin-bottom: 12px; }
 .stat { background: white; border-radius: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); padding: 20px; flex: 1; text-align: center; }
 .stat .num { font-size: 32px; font-weight: 700; color: #06C755; } .stat .label { font-size: 13px; color: #666; margin-top: 4px; }
 </style>
@@ -98,6 +103,23 @@ tr:hover td { background: #fafafa; }
     </div>
   </div>
 </div>
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h3 id="editModalTitle">アドミン編集</h3>
+    <div class="modal-form">
+      <label>メールアドレス</label>
+      <input type="email" id="editEmail" placeholder="admin@example.com">
+      <label>新しいパスワード</label>
+      <input type="password" id="editPassword" placeholder="変更する場合のみ入力">
+      <div class="hint">8文字以上。空欄なら変更しません。</div>
+    </div>
+    <div class="msg error" id="editError" style="margin-bottom:12px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeEditModal()">キャンセル</button>
+      <button class="btn btn-primary" id="confirmEditBtn" onclick="confirmEdit()">保存</button>
+    </div>
+  </div>
+</div>
 <div class="msg success" id="actionSuccess" style="position:fixed;top:16px;right:16px;z-index:200;display:none;min-width:200px;"></div>
 <div class="msg error" id="actionError" style="position:fixed;top:16px;right:16px;z-index:200;display:none;min-width:200px;"></div>
 <script>
@@ -133,8 +155,9 @@ async function loadData() {
         const toggleBtn = u.status === 'active'
           ? '<button class="btn-sm btn-toggle" onclick="toggleStatus(\\'' + u.id + '\\',\\'inactive\\')" title="無効化">無効化</button>'
           : '<button class="btn-sm btn-enable" onclick="toggleStatus(\\'' + u.id + '\\',\\'active\\')" title="有効化">有効化</button>';
+        const editBtn = '<button class="btn-sm btn-edit" onclick="openEditModal(\\'' + u.id + '\\',\\'' + esc(u.login_id) + '\\',\\'' + esc(u.email || '') + '\\')" title="編集">編集</button>';
         const deleteBtn = '<button class="btn-sm btn-danger" onclick="openDeleteModal(\\'' + u.id + '\\',\\'' + esc(u.login_id) + '\\')" title="削除">削除</button>';
-        actions = '<div class="actions">' + toggleBtn + deleteBtn + '</div>';
+        actions = '<div class="actions">' + toggleBtn + editBtn + deleteBtn + '</div>';
       }
       return '<tr><td>' + esc(u.login_id) + '</td><td><span class="badge ' + (u.role === 'super_admin' ? 'badge-super' : 'badge-admin') + '">' + u.role + '</span></td>' +
         '<td>' + (tenantMap[u.tenant_id] || '-') + '</td>' +
@@ -212,6 +235,41 @@ async function toggleStatus(id, newStatus) {
   } catch (err) { showNotice('error', 'エラー: ' + err.message); }
   btns.forEach(b => b.disabled = false);
 }
+let pendingEditId = null;
+function openEditModal(id, loginId, email) {
+  pendingEditId = id;
+  document.getElementById('editModalTitle').textContent = 'アドミン編集: ' + loginId;
+  document.getElementById('editEmail').value = email;
+  document.getElementById('editPassword').value = '';
+  document.getElementById('editError').style.display = 'none';
+  document.getElementById('editModal').classList.add('show');
+}
+function closeEditModal() {
+  pendingEditId = null;
+  document.getElementById('editModal').classList.remove('show');
+}
+async function confirmEdit() {
+  if (!pendingEditId) return;
+  const email = document.getElementById('editEmail').value;
+  const password = document.getElementById('editPassword').value;
+  const errorEl = document.getElementById('editError');
+  errorEl.style.display = 'none';
+  if (!password && email === '') { errorEl.textContent = '変更内容を入力してください'; errorEl.style.display = 'block'; return; }
+  if (password && password.length < 8) { errorEl.textContent = 'パスワードは8文字以上'; errorEl.style.display = 'block'; return; }
+  const body = {};
+  if (password) body.password = password;
+  body.email = email;
+  const btn = document.getElementById('confirmEditBtn');
+  btn.disabled = true; btn.textContent = '保存中...';
+  try {
+    const res = await fetch('/api/admin/users/' + pendingEditId, { method: 'PATCH', headers, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (data.status === 'ok') { showNotice('success', '更新しました'); loadData(); closeEditModal(); }
+    else { errorEl.textContent = data.message || '更新に失敗しました'; errorEl.style.display = 'block'; }
+  } catch (err) { errorEl.textContent = 'エラー: ' + err.message; errorEl.style.display = 'block'; }
+  btn.disabled = false; btn.textContent = '保存';
+}
+
 function showNotice(type, msg) {
   const el = document.getElementById(type === 'success' ? 'actionSuccess' : 'actionError');
   el.textContent = msg; el.style.display = 'block';

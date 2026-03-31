@@ -155,6 +155,17 @@ async function handleAdminUserById(request: Request, url: URL, env: Env): Promis
       return Response.json({ status: 'ok', user });
     }
 
+    // PATCH /api/admin/users/:id (edit: password, email)
+    if (request.method === 'PATCH' && !segments[5]) {
+      let body: { password?: string; email?: string };
+      try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+      if (!body.password && body.email === undefined) {
+        return Response.json({ status: 'error', message: 'Nothing to update' }, { status: 400 });
+      }
+      const user = await adminService.updateUser(userId, body);
+      return Response.json({ status: 'ok', user });
+    }
+
     if (request.method === 'DELETE') {
       await adminService.deleteUser(userId, auth!.user_id);
       return Response.json({ status: 'ok' });
