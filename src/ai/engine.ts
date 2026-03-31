@@ -1,12 +1,39 @@
 import { SYSTEM_PROMPT_V1 } from './prompts';
 import type { AiChatRequest, AiChatResponse, ChatMessage } from './types';
+import type { Bot, KnowledgeItem } from '../adapters/bot-knowledge';
+
+export interface BotKnowledgeContext {
+  bot?: Bot;
+  knowledge?: KnowledgeItem[];
+}
 
 export async function generatePlan(
   request: AiChatRequest,
   apiKey: string,
+  botKnowledge?: BotKnowledgeContext,
 ): Promise<AiChatResponse> {
+  let systemPrompt = SYSTEM_PROMPT_V1;
+
+  if (botKnowledge?.bot) {
+    const b = botKnowledge.bot;
+    systemPrompt += '\n\n[Bot Context]\nName: ' + b.name +
+      '\nStrategy: ' + b.strategy +
+      '\nTone: ' + b.tone +
+      (b.target_audience ? '\nTarget: ' + b.target_audience : '') +
+      (b.goal ? '\nGoal: ' + b.goal : '') +
+      (b.description ? '\nDescription: ' + b.description : '') +
+      '\n\nUse this bot\'s strategy, tone, and goals to tailor your scenario suggestions.';
+  }
+
+  if (botKnowledge?.knowledge && botKnowledge.knowledge.length > 0) {
+    systemPrompt += '\n\n[Knowledge Context]\nUse the following knowledge to inform your responses:\n';
+    for (const k of botKnowledge.knowledge) {
+      systemPrompt += '\n--- ' + k.title + ' [' + k.category + '] ---\n' + k.content + '\n';
+    }
+  }
+
   const messages: Array<{ role: string; content: string }> = [
-    { role: 'system', content: SYSTEM_PROMPT_V1 },
+    { role: 'system', content: systemPrompt },
   ];
 
   // Add conversation history
