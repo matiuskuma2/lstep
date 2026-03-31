@@ -58,11 +58,11 @@ export function getScenariosPageHtml(): string {
         const list = d.scenarios || [];
         if (list.length === 0) { document.getElementById('scenarioList').innerHTML = '<tr><td colspan="5" style="color:#999">\u30b7\u30ca\u30ea\u30aa\u304c\u3042\u308a\u307e\u305b\u3093</td></tr>'; return; }
         document.getElementById('scenarioList').innerHTML = list.map(s =>
-          '<tr onclick="showDetail(\''+s.id+'\')"+style="cursor:pointer"><td>'+esc(s.name)+'</td>' +
+          '<tr onclick="showDetail(\\\''+s.id+'\\\')" style="cursor:pointer"><td>'+esc(s.name)+'</td>' +
           '<td><span class="badge badge-active">'+s.trigger_type+'</span></td>' +
           '<td><span class="badge '+(s.status==='active'?'badge-active':'badge-admin')+'">'+s.status+'</span></td>' +
           '<td>'+s.created_at.substring(0,10)+'</td>' +
-          '<td><button class="btn btn-primary" onclick="event.stopPropagation();showDetail(\''+s.id+'\')" style="padding:4px 12px;font-size:12px">\u8a73\u7d30</button></td></tr>'
+          '<td><button class="btn btn-primary" onclick="event.stopPropagation();showDetail(\\\''+s.id+'\\\')" style="padding:4px 12px;font-size:12px">\u8a73\u7d30</button></td></tr>'
         ).join('');
       } catch(e) {
         const message = e instanceof Error ? e.message : String(e);
