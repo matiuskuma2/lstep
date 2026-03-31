@@ -20,12 +20,21 @@ export function getFriendsPageHtml(): string {
     </div>
     <script>
     async function loadFriends() {
-      const r = await fetch('/api/friends', {headers:authHeaders()});
-      const d = await r.json(); const items = d.friends || [];
-      if (!items.length) { document.getElementById('fList').innerHTML = '<tr><td colspan="5" style="color:#999">\u53cb\u3060\u3061\u304c\u3044\u307e\u305b\u3093</td></tr>'; return; }
-      document.getElementById('fList').innerHTML = items.map(f =>
-        '<tr><td>'+esc(f.display_name)+'</td><td style="font-size:11px;color:#999">'+(f.line_user_id||'-')+'</td><td>'+(f.ref_code||'-')+'</td><td><span class="badge badge-active">'+f.status+'</span></td><td>'+f.created_at.substring(0,10)+'</td></tr>'
-      ).join('');
+      try {
+        const r = await fetch('/api/friends', {headers:authHeaders()});
+        if (!r.ok) {
+          document.getElementById('fList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u30c7\u30fc\u30bf\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\uff08' + r.status + '\uff09</td></tr>';
+          return;
+        }
+        const d = await r.json(); const items = d.friends || [];
+        if (!items.length) { document.getElementById('fList').innerHTML = '<tr><td colspan="5" style="color:#999">\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093</td></tr>'; return; }
+        document.getElementById('fList').innerHTML = items.map(f =>
+          '<tr><td>'+esc(f.display_name)+'</td><td style="font-size:11px;color:#999">'+(f.line_user_id||'-')+'</td><td>'+(f.ref_code||'-')+'</td><td><span class="badge badge-active">'+f.status+'</span></td><td>'+f.created_at.substring(0,10)+'</td></tr>'
+        ).join('');
+      } catch(e) {
+        const message = e instanceof Error ? e.message : String(e);
+        document.getElementById('fList').innerHTML = '<tr><td colspan="5" style="color:#c62828">\u8aad\u307f\u8fbc\u307f\u30a8\u30e9\u30fc: ' + message + '</td></tr>';
+      }
     }
     async function addFriend() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');er.style.display='none';su.style.display='none';
@@ -61,12 +70,21 @@ export function getBroadcastsPageHtml(): string {
     </div>
     <script>
     async function loadBroadcasts() {
-      const r = await fetch('/api/broadcasts', {headers:authHeaders()});
-      const d = await r.json(); const items = d.broadcasts || [];
-      if (!items.length) { document.getElementById('bList').innerHTML = '<tr><td colspan="4" style="color:#999">\u914d\u4fe1\u306a\u3057</td></tr>'; return; }
-      document.getElementById('bList').innerHTML = items.map(b =>
-        '<tr><td>'+esc(b.name)+'</td><td><span class="badge '+(b.status==='sent'?'badge-active':'badge-admin')+'">'+b.status+'</span></td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(b.message_content.substring(0,50))+'</td><td>'+b.created_at.substring(0,10)+'</td></tr>'
-      ).join('');
+      try {
+        const r = await fetch('/api/broadcasts', {headers:authHeaders()});
+        if (!r.ok) {
+          document.getElementById('bList').innerHTML = '<tr><td colspan="4" style="color:#c62828">\u30c7\u30fc\u30bf\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\uff08' + r.status + '\uff09</td></tr>';
+          return;
+        }
+        const d = await r.json(); const items = d.broadcasts || [];
+        if (!items.length) { document.getElementById('bList').innerHTML = '<tr><td colspan="4" style="color:#999">\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093</td></tr>'; return; }
+        document.getElementById('bList').innerHTML = items.map(b =>
+          '<tr><td>'+esc(b.name)+'</td><td><span class="badge '+(b.status==='sent'?'badge-active':'badge-admin')+'">'+b.status+'</span></td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(b.message_content.substring(0,50))+'</td><td>'+b.created_at.substring(0,10)+'</td></tr>'
+        ).join('');
+      } catch(e) {
+        const message = e instanceof Error ? e.message : String(e);
+        document.getElementById('bList').innerHTML = '<tr><td colspan="4" style="color:#c62828">\u8aad\u307f\u8fbc\u307f\u30a8\u30e9\u30fc: ' + message + '</td></tr>';
+      }
     }
     async function createBroadcast() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');er.style.display='none';su.style.display='none';
@@ -104,12 +122,21 @@ export function getFormsPageHtml(): string {
     </div>
     <script>
     async function loadForms() {
-      const r = await fetch('/api/forms', {headers:authHeaders()});
-      const d = await r.json(); const items = d.forms || [];
-      if (!items.length) { document.getElementById('formList').innerHTML = '<tr><td colspan="4" style="color:#999">\u30d5\u30a9\u30fc\u30e0\u306a\u3057</td></tr>'; return; }
-      document.getElementById('formList').innerHTML = items.map(f =>
-        '<tr><td>'+esc(f.name)+'</td><td>'+(f.description||'-')+'</td><td><span class="badge badge-active">'+f.status+'</span></td><td>'+f.created_at.substring(0,10)+'</td></tr>'
-      ).join('');
+      try {
+        const r = await fetch('/api/forms', {headers:authHeaders()});
+        if (!r.ok) {
+          document.getElementById('formList').innerHTML = '<tr><td colspan="4" style="color:#c62828">\u30c7\u30fc\u30bf\u306e\u53d6\u5f97\u306b\u5931\u6557\u3057\u307e\u3057\u305f\uff08' + r.status + '\uff09</td></tr>';
+          return;
+        }
+        const d = await r.json(); const items = d.forms || [];
+        if (!items.length) { document.getElementById('formList').innerHTML = '<tr><td colspan="4" style="color:#999">\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093</td></tr>'; return; }
+        document.getElementById('formList').innerHTML = items.map(f =>
+          '<tr><td>'+esc(f.name)+'</td><td>'+(f.description||'-')+'</td><td><span class="badge badge-active">'+f.status+'</span></td><td>'+f.created_at.substring(0,10)+'</td></tr>'
+        ).join('');
+      } catch(e) {
+        const message = e instanceof Error ? e.message : String(e);
+        document.getElementById('formList').innerHTML = '<tr><td colspan="4" style="color:#c62828">\u8aad\u307f\u8fbc\u307f\u30a8\u30e9\u30fc: ' + message + '</td></tr>';
+      }
     }
     async function createForm() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');er.style.display='none';su.style.display='none';

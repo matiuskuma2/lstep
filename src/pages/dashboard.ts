@@ -7,6 +7,10 @@ export function getDashboardHtml(): string {
       const h = authHeaders();
       try {
         const [linksRes] = await Promise.all([fetch('/api/tracked-links', {headers: h})]);
+        if (!linksRes.ok) {
+          document.getElementById('stats').innerHTML = '<div class="stat"><div class="num" style="color:#c62828">-</div><div class="label" style="color:#c62828">データの取得に失敗しました（' + linksRes.status + '）</div></div>';
+          return;
+        }
         const linksData = await linksRes.json();
         const links = linksData.links || [];
         document.getElementById('stats').innerHTML =
@@ -14,7 +18,10 @@ export function getDashboardHtml(): string {
           '<div class="stat"><div class="num">-</div><div class="label">シナリオ</div></div>' +
           '<div class="stat"><div class="num">-</div><div class="label">友だち</div></div>' +
           '<div class="stat"><div class="num">-</div><div class="label">CV</div></div>';
-      } catch(e) { console.error(e); }
+      } catch(e) {
+        const message = e instanceof Error ? e.message : String(e);
+        document.getElementById('stats').innerHTML = '<div class="stat"><div class="num" style="color:#c62828">-</div><div class="label" style="color:#c62828">読み込みエラー: ' + message + '</div></div>';
+      }
     }
     loadDashboard();
     </script>
