@@ -25,8 +25,17 @@ export default {
       });
     }
 
-    if (url.pathname === '/api/ai/test' && request.method === 'POST') {
-      return handleAiTest(request, env);
+    if (url.pathname === '/api/ai/test') {
+      if (request.method === 'GET') {
+        return handleAiTest(new Request(request.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: 'hello' }),
+        }), env);
+      }
+      if (request.method === 'POST') {
+        return handleAiTest(request, env);
+      }
     }
 
     return Response.json({ error: 'not found' }, { status: 404 });
