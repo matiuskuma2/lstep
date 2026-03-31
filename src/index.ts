@@ -28,12 +28,12 @@ export default {
       if (url.pathname === '/health') {
         response = Response.json({ status: 'ok', environment: env.ENVIRONMENT, timestamp: new Date().toISOString() });
       } else if (url.pathname === '/') {
-        response = Response.json({ name: 'lstep-ai-api', environment: env.ENVIRONMENT, version: '0.6.0' });
+        response = Response.json({ name: 'lstep-ai-api', environment: env.ENVIRONMENT, version: '0.6.1' });
       } else if (url.pathname === '/api/auth/login' && request.method === 'POST') {
         response = await handleLogin(request, env);
       } else if (url.pathname === '/api/auth/me' && request.method === 'GET') {
         response = await handleMe(request, env);
-      } else if (url.pathname === '/api/admin/bootstrap' && request.method === 'POST') {
+      } else if (url.pathname === '/api/admin/bootstrap') {
         response = await handleBootstrap(request, env);
       } else if (url.pathname === '/api/ai/test') {
         response = await handleAiTest(request, env);
@@ -47,6 +47,8 @@ export default {
         response = new Response(getChatHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/login') {
         response = new Response(getLoginHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      } else if (url.pathname === '/setup') {
+        response = new Response(getSetupHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else {
         response = Response.json({ error: 'not found' }, { status: 404 });
       }
@@ -85,14 +87,33 @@ async function handleMe(request: Request, env: Env): Promise<Response> {
 
 async function handleBootstrap(request: Request, env: Env): Promise<Response> {
   if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'ADMIN_JWT_SECRET not configured' }, { status: 503 });
-  let body: { login_id?: string; password?: string; email?: string };
-  try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
-  if (!body.login_id || !body.password) return Response.json({ status: 'error', message: 'login_id and password required' }, { status: 400 });
-  if (body.password.length < 8) return Response.json({ status: 'error', message: 'Password must be at least 8 characters' }, { status: 400 });
+
+  let loginId: string;
+  let password: string;
+  let email: string | undefined;
+
+  if (request.method === 'POST') {
+    let body: { login_id?: string; password?: string; email?: string };
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    loginId = body.login_id || '';
+    password = body.password || '';
+    email = body.email;
+  } else if (request.method === 'GET') {
+    const url = new URL(request.url);
+    loginId = url.searchParams.get('login_id') || '';
+    password = url.searchParams.get('password') || '';
+    email = url.searchParams.get('email') || undefined;
+  } else {
+    return Response.json({ error: 'method not allowed' }, { status: 405 });
+  }
+
+  if (!loginId || !password) return Response.json({ status: 'error', message: 'login_id and password required' }, { status: 400 });
+  if (password.length < 8) return Response.json({ status: 'error', message: 'Password must be at least 8 characters' }, { status: 400 });
+
   const auth = new AuthService(env.DB, env.ADMIN_JWT_SECRET);
   try {
-    const user = await auth.bootstrap(body.login_id, body.password, body.email);
-    return Response.json({ status: 'ok', message: 'Super admin created', user }, { status: 201 });
+    const user = await auth.bootstrap(loginId, password, email);
+    return Response.json({ status: 'ok', message: 'Super admin created. Go to /login to sign in.', user }, { status: 201 });
   } catch (err) {
     return Response.json({ status: 'error', message: String(err) }, { status: 409 });
   }
@@ -164,6 +185,72 @@ async function handleRedirect(request: Request, url: URL, env: Env): Promise<Res
   return Response.redirect(link.destination_url, 302);
 }
 
+// --- Setup HTML (bootstrap super admin) ---
+function getSetupHtml(): string {
+  return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>lstep - 初期セットアップ</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+.card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); width: 100%; max-width: 440px; }
+h1 { color: #06C755; font-size: 24px; margin-bottom: 8px; }
+.subtitle { color: #666; font-size: 14px; margin-bottom: 24px; }
+label { display: block; font-size: 13px; color: #333; margin-bottom: 4px; font-weight: 500; }
+input { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 16px; outline: none; }
+input:focus { border-color: #06C755; }
+button { width: 100%; padding: 12px; background: #06C755; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
+button:hover { background: #05a648; }
+.msg { font-size: 13px; margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; display: none; }
+.msg.error { background: #ffebee; color: #c62828; }
+.msg.success { background: #e8f5e9; color: #2e7d32; }
+.note { font-size: 12px; color: #999; margin-top: 16px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>lstep 初期セットアップ</h1>
+  <div class="subtitle">スーパーアドミンアカウントを作成します（1回のみ）</div>
+  <div class="msg error" id="error"></div>
+  <div class="msg success" id="success"></div>
+  <label>ログインID</label>
+  <input type="text" id="loginId" placeholder="admin">
+  <label>パスワード（8文字以上）</label>
+  <input type="password" id="password" placeholder="********">
+  <label>メールアドレス（任意）</label>
+  <input type="email" id="email" placeholder="admin@example.com">
+  <button onclick="doSetup()">スーパーアドミンを作成</button>
+  <div class="note">このページは1回だけ使えます。作成後は /login からログインしてください。</div>
+</div>
+<script>
+async function doSetup() {
+  const loginId = document.getElementById('loginId').value;
+  const password = document.getElementById('password').value;
+  const email = document.getElementById('email').value;
+  const errorEl = document.getElementById('error');
+  const successEl = document.getElementById('success');
+  errorEl.style.display = 'none'; successEl.style.display = 'none';
+  if (!loginId || !password) { errorEl.textContent = 'ログインIDとパスワードを入力してください'; errorEl.style.display = 'block'; return; }
+  if (password.length < 8) { errorEl.textContent = 'パスワードは8文字以上にしてください'; errorEl.style.display = 'block'; return; }
+  try {
+    const res = await fetch('/api/admin/bootstrap', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ login_id: loginId, password, email: email || undefined }) });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      successEl.textContent = 'スーパーアドミンを作成しました！ログインページへ移動します...';
+      successEl.style.display = 'block';
+      setTimeout(() => { window.location.href = '/login'; }, 2000);
+    } else { errorEl.textContent = data.message || '作成に失敗しました'; errorEl.style.display = 'block'; }
+  } catch (err) { errorEl.textContent = 'エラー: ' + err.message; errorEl.style.display = 'block'; }
+}
+</script>
+</body>
+</html>`;
+}
+
 // --- Login HTML ---
 function getLoginHtml(): string {
   return `<!DOCTYPE html>
@@ -175,7 +262,7 @@ function getLoginHtml(): string {
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-.login-card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+.card { background: white; padding: 40px; border-radius: 16px; box-shadow: 0 2px 12px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
 h1 { color: #06C755; font-size: 24px; margin-bottom: 8px; }
 .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; }
 label { display: block; font-size: 13px; color: #333; margin-bottom: 4px; font-weight: 500; }
@@ -183,16 +270,17 @@ input { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 
 input:focus { border-color: #06C755; }
 button { width: 100%; padding: 12px; background: #06C755; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
 button:hover { background: #05a648; }
-.error { color: #c62828; font-size: 13px; margin-bottom: 12px; display: none; }
-.success { color: #2e7d32; font-size: 13px; margin-bottom: 12px; display: none; }
+.msg { font-size: 13px; margin-bottom: 12px; padding: 8px 12px; border-radius: 8px; display: none; }
+.msg.error { background: #ffebee; color: #c62828; }
+.msg.success { background: #e8f5e9; color: #2e7d32; }
 </style>
 </head>
 <body>
-<div class="login-card">
+<div class="card">
   <h1>lstep</h1>
   <div class="subtitle">管理者ログイン</div>
-  <div class="error" id="error"></div>
-  <div class="success" id="success"></div>
+  <div class="msg error" id="error"></div>
+  <div class="msg success" id="success"></div>
   <label>ログインID</label>
   <input type="text" id="loginId" placeholder="login_id">
   <label>パスワード</label>
@@ -205,8 +293,7 @@ async function doLogin() {
   const password = document.getElementById('password').value;
   const errorEl = document.getElementById('error');
   const successEl = document.getElementById('success');
-  errorEl.style.display = 'none';
-  successEl.style.display = 'none';
+  errorEl.style.display = 'none'; successEl.style.display = 'none';
   if (!loginId || !password) { errorEl.textContent = 'ログインIDとパスワードを入力してください'; errorEl.style.display = 'block'; return; }
   try {
     const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ login_id: loginId, password }) });
@@ -214,14 +301,11 @@ async function doLogin() {
     if (data.status === 'ok') {
       localStorage.setItem('lstep_token', data.token);
       localStorage.setItem('lstep_user', JSON.stringify(data.user));
-      successEl.textContent = 'ログイン成功！リダイレクト中...';
+      successEl.textContent = 'ログイン成功！';
       successEl.style.display = 'block';
       setTimeout(() => { window.location.href = '/chat'; }, 1000);
-    } else {
-      errorEl.textContent = data.message || 'ログインに失敗しました';
-      errorEl.style.display = 'block';
-    }
-  } catch (err) { errorEl.textContent = 'エラーが発生しました: ' + err.message; errorEl.style.display = 'block'; }
+    } else { errorEl.textContent = data.message || 'ログインに失敗しました'; errorEl.style.display = 'block'; }
+  } catch (err) { errorEl.textContent = 'エラー: ' + err.message; errorEl.style.display = 'block'; }
 }
 document.getElementById('password').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
 </script>
@@ -229,7 +313,7 @@ document.getElementById('password').addEventListener('keydown', (e) => { if (e.k
 </html>`;
 }
 
-// --- Chat HTML (same as before, keeping compact) ---
+// --- Chat HTML ---
 function getChatHtml(): string {
   return `<!DOCTYPE html>
 <html lang="ja">
@@ -242,7 +326,7 @@ function getChatHtml(): string {
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; height: 100vh; display: flex; flex-direction: column; }
 .header { background: #06C755; color: white; padding: 16px 20px; font-size: 18px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
 .header span { font-size: 14px; font-weight: 400; opacity: 0.8; }
-.header .user-info { font-size: 12px; opacity: 0.8; }
+.header .user-info { font-size: 12px; opacity: 0.8; cursor: pointer; }
 .chat-area { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
 .msg { max-width: 85%; padding: 12px 16px; border-radius: 16px; font-size: 14px; line-height: 1.6; word-break: break-word; }
 .msg.user { background: #06C755; color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
@@ -269,7 +353,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <body>
 <div class="header">
   <div>lstep AI Chat <span>v0.6</span></div>
-  <div class="user-info" id="userInfo"></div>
+  <div class="user-info" id="userInfo" onclick="logout()"></div>
 </div>
 <div class="chat-area" id="chatArea">
   <div class="msg ai">LINEステップ配信の設定をお手伝いします。<br><br>例: 「新規友だち向けに3日ステップを作って」<br>例: 「YouTube流入向けのtracked linkを作って」<br>例: 「ライフプラン申込をCVにして」</div>
@@ -282,12 +366,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 const chatArea = document.getElementById('chatArea');
 const msgInput = document.getElementById('msgInput');
 const sendBtn = document.getElementById('sendBtn');
-const userInfo = document.getElementById('userInfo');
+const userInfoEl = document.getElementById('userInfo');
 let conversationHistory = [];
 let accumulatedSlots = [];
 
 const user = JSON.parse(localStorage.getItem('lstep_user') || 'null');
-if (user) { userInfo.textContent = user.login_id + ' (' + user.role + ')'; }
+if (user) { userInfoEl.textContent = user.login_id + ' (' + user.role + ') [ログアウト]'; }
+else { userInfoEl.textContent = '未ログイン'; }
+
+function logout() { localStorage.removeItem('lstep_token'); localStorage.removeItem('lstep_user'); window.location.href = '/login'; }
 
 msgInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) sendMessage(); });
 async function sendMessage() {
