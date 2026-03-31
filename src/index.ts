@@ -10,6 +10,9 @@ import { getDashboardHtml, getTrackedLinksPageHtml, getPlaceholderPageHtml } fro
 import { getScenariosPageHtml } from './pages/scenarios';
 import { ScenarioAdapter } from './adapters/scenario';
 import type { CreateScenarioInput, CreateStepInput } from './adapters/scenario';
+import { getTagsPageHtml, getConversionsPageHtml } from './pages/tags-cv';
+import { TagAdapter } from './adapters/tag';
+import { ConversionPointAdapter } from './adapters/conversion-point';
 
 export interface Env {
   DB: D1Database;
@@ -34,7 +37,7 @@ export default {
       if (url.pathname === '/health') {
         response = Response.json({ status: 'ok', environment: env.ENVIRONMENT, timestamp: new Date().toISOString() });
       } else if (url.pathname === '/') {
-        response = Response.json({ name: 'lchatAI-api', environment: env.ENVIRONMENT, version: '0.10.0' });
+        response = Response.json({ name: 'lchatAI-api', environment: env.ENVIRONMENT, version: '0.11.0' });
       } else if (url.pathname === '/api/auth/login' && request.method === 'POST') {
         response = await handleLogin(request, env);
       } else if (url.pathname === '/api/auth/me' && request.method === 'GET') {
@@ -45,6 +48,10 @@ export default {
         response = await handleAdminUsers(request, env);
       } else if (url.pathname === '/api/admin/tenants') {
         response = await handleAdminTenants(request, env);
+      } else if (url.pathname === '/api/tags') {
+        response = await handleTags(request, env);
+      } else if (url.pathname === '/api/conversion-points') {
+        response = await handleConversionPoints(request, env);
       } else if (url.pathname === '/api/scenarios' || url.pathname.startsWith('/api/scenarios/')) {
         response = await handleScenarios(request, url, env);
       } else if (url.pathname === '/api/ai/test') {
@@ -70,9 +77,9 @@ export default {
       } else if (url.pathname === '/dashboard/friends') {
         response = new Response(getPlaceholderPageHtml('友だち管理', 'friends'), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/tags') {
-        response = new Response(getPlaceholderPageHtml('タグ管理', 'tags'), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+        response = new Response(getTagsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/conversions') {
-        response = new Response(getPlaceholderPageHtml('CV管理', 'conversions'), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+        response = new Response(getConversionsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/broadcasts') {
         response = new Response(getPlaceholderPageHtml('配信管理', 'broadcasts'), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/forms') {
@@ -164,6 +171,50 @@ async function handleBootstrap(request: Request, env: Env): Promise<Response> {
     const user = await auth.bootstrap(loginId, password, email);
     return Response.json({ status: 'ok', message: 'Super admin created. Go to /login to sign in.', user }, { status: 201 });
   } catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 409 }); }
+}
+
+// --- Tags ---
+async function handleTags(request: Request, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+  const adapter = new TagAdapter(env.DB);
+  const tenantId = auth!.tenant_id;
+  if (request.method === 'GET') {
+    const tags = tenantId ? await adapter.list(tenantId) : await adapter.listAll();
+    return Response.json({ status: 'ok', tags });
+  }
+  if (request.method === 'POST') {
+    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
+    let body: { name?: string; color?: string; description?: string };
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    try { const tag = await adapter.create(tenantId, { name: body.name || '', color: body.color, description: body.description }); return Response.json({ status: 'ok', tag }, { status: 201 }); }
+    catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
+  }
+  return Response.json({ error: 'method not allowed' }, { status: 405 });
+}
+
+// --- Conversion Points ---
+async function handleConversionPoints(request: Request, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+  const adapter = new ConversionPointAdapter(env.DB);
+  const tenantId = auth!.tenant_id;
+  if (request.method === 'GET') {
+    const cvs = tenantId ? await adapter.list(tenantId) : await adapter.listAll();
+    return Response.json({ status: 'ok', conversion_points: cvs });
+  }
+  if (request.method === 'POST') {
+    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
+    let body: { name?: string; code?: string; scope?: string; verification_method?: string; is_primary?: boolean; value_amount?: number; description?: string };
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    try { const cv = await adapter.create(tenantId, { name: body.name || '', code: body.code || '', scope: body.scope, verification_method: body.verification_method, is_primary: body.is_primary, value_amount: body.value_amount, description: body.description }); return Response.json({ status: 'ok', conversion_point: cv }, { status: 201 }); }
+    catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
+  }
+  return Response.json({ error: 'method not allowed' }, { status: 405 });
 }
 
 // --- Scenarios ---
