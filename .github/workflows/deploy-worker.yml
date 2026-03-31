@@ -54,6 +54,7 @@ jobs:
         if: steps.env.outputs.target == 'staging'
         run: |
           echo "${{ secrets.OPENAI_API_KEY }}" | wrangler secret put OPENAI_API_KEY --env staging
+          echo "${{ secrets.ADMIN_JWT_SECRET }}" | wrangler secret put ADMIN_JWT_SECRET --env staging
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -69,6 +70,7 @@ jobs:
         if: steps.env.outputs.target == 'production'
         run: |
           echo "${{ secrets.OPENAI_API_KEY }}" | wrangler secret put OPENAI_API_KEY
+          echo "${{ secrets.ADMIN_JWT_SECRET }}" | wrangler secret put ADMIN_JWT_SECRET
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -79,4 +81,4 @@ jobs:
           echo "- **Environment:** ${{ steps.env.outputs.target }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Secrets:** OPENAI_API_KEY set" >> $GITHUB_STEP_SUMMARY
+          echo "- **Secrets:** OPENAI_API_KEY, ADMIN_JWT_SECRET set" >> $GITHUB_STEP_SUMMARY
