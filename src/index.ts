@@ -17,6 +17,16 @@ export default {
       });
     }
 
+    if (url.pathname === '/debug/env') {
+      return Response.json({
+        environment: env.ENVIRONMENT,
+        has_openai_key: !!env.OPENAI_API_KEY,
+        openai_key_length: env.OPENAI_API_KEY?.length || 0,
+        has_db: !!env.DB,
+        env_keys: Object.keys(env),
+      });
+    }
+
     if (url.pathname === '/') {
       return Response.json({
         name: 'lstep-ai-api',
