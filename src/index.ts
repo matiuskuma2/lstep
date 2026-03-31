@@ -13,6 +13,10 @@ import type { CreateScenarioInput, CreateStepInput } from './adapters/scenario';
 import { getTagsPageHtml, getConversionsPageHtml } from './pages/tags-cv';
 import { TagAdapter } from './adapters/tag';
 import { ConversionPointAdapter } from './adapters/conversion-point';
+import { getFriendsPageHtml, getBroadcastsPageHtml, getFormsPageHtml } from './pages/friends-broadcasts-forms';
+import { FriendAdapter } from './adapters/friend';
+import { BroadcastAdapter } from './adapters/broadcast';
+import { FormAdapter } from './adapters/form';
 
 export interface Env {
   DB: D1Database;
@@ -37,7 +41,7 @@ export default {
       if (url.pathname === '/health') {
         response = Response.json({ status: 'ok', environment: env.ENVIRONMENT, timestamp: new Date().toISOString() });
       } else if (url.pathname === '/') {
-        response = Response.json({ name: 'lchatAI-api', environment: env.ENVIRONMENT, version: '0.11.0' });
+        response = Response.json({ name: 'lchatAI-api', environment: env.ENVIRONMENT, version: '0.12.0' });
       } else if (url.pathname === '/api/auth/login' && request.method === 'POST') {
         response = await handleLogin(request, env);
       } else if (url.pathname === '/api/auth/me' && request.method === 'GET') {
@@ -48,6 +52,12 @@ export default {
         response = await handleAdminUsers(request, env);
       } else if (url.pathname === '/api/admin/tenants') {
         response = await handleAdminTenants(request, env);
+      } else if (url.pathname === '/api/friends') {
+        response = await handleFriends(request, env);
+      } else if (url.pathname === '/api/broadcasts') {
+        response = await handleBroadcasts(request, env);
+      } else if (url.pathname === '/api/forms') {
+        response = await handleForms(request, env);
       } else if (url.pathname === '/api/tags') {
         response = await handleTags(request, env);
       } else if (url.pathname === '/api/conversion-points') {
@@ -75,15 +85,15 @@ export default {
       } else if (url.pathname === '/dashboard/scenarios') {
         response = new Response(getScenariosPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/friends') {
-        response = new Response(getPlaceholderPageHtml('友だち管理', 'friends'), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+        response = new Response(getFriendsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/tags') {
         response = new Response(getTagsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/conversions') {
         response = new Response(getConversionsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/broadcasts') {
-        response = new Response(getPlaceholderPageHtml('配信管理', 'broadcasts'), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+        response = new Response(getBroadcastsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/forms') {
-        response = new Response(getPlaceholderPageHtml('フォーム管理', 'forms'), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+        response = new Response(getFormsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/setup') {
         response = new Response(getSetupHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else {
@@ -171,6 +181,72 @@ async function handleBootstrap(request: Request, env: Env): Promise<Response> {
     const user = await auth.bootstrap(loginId, password, email);
     return Response.json({ status: 'ok', message: 'Super admin created. Go to /login to sign in.', user }, { status: 201 });
   } catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 409 }); }
+}
+
+// --- Friends ---
+async function handleFriends(request: Request, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+  const adapter = new FriendAdapter(env.DB);
+  const tenantId = auth!.tenant_id;
+  if (request.method === 'GET') {
+    const friends = tenantId ? await adapter.list(tenantId) : await adapter.listAll();
+    return Response.json({ status: 'ok', friends });
+  }
+  if (request.method === 'POST') {
+    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
+    let body: { display_name?: string; line_user_id?: string; ref_code?: string };
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    try { const f = await adapter.create(tenantId, { display_name: body.display_name || '', line_user_id: body.line_user_id, ref_code: body.ref_code }); return Response.json({ status: 'ok', friend: f }, { status: 201 }); }
+    catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
+  }
+  return Response.json({ error: 'method not allowed' }, { status: 405 });
+}
+
+// --- Broadcasts ---
+async function handleBroadcasts(request: Request, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+  const adapter = new BroadcastAdapter(env.DB);
+  const tenantId = auth!.tenant_id;
+  if (request.method === 'GET') {
+    const broadcasts = tenantId ? await adapter.list(tenantId) : await adapter.listAll();
+    return Response.json({ status: 'ok', broadcasts });
+  }
+  if (request.method === 'POST') {
+    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
+    let body: { name?: string; message_content?: string; message_type?: string; target_tag_id?: string; scheduled_at?: string };
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    try { const b = await adapter.create(tenantId, { name: body.name || '', message_content: body.message_content || '', message_type: body.message_type, target_tag_id: body.target_tag_id, scheduled_at: body.scheduled_at }); return Response.json({ status: 'ok', broadcast: b }, { status: 201 }); }
+    catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
+  }
+  return Response.json({ error: 'method not allowed' }, { status: 405 });
+}
+
+// --- Forms ---
+async function handleForms(request: Request, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+  const adapter = new FormAdapter(env.DB);
+  const tenantId = auth!.tenant_id;
+  if (request.method === 'GET') {
+    const forms = tenantId ? await adapter.list(tenantId) : await adapter.listAll();
+    return Response.json({ status: 'ok', forms });
+  }
+  if (request.method === 'POST') {
+    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
+    let body: { name?: string; description?: string; fields?: Array<{label:string;type:string;required?:boolean}> };
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    try { const f = await adapter.create(tenantId, { name: body.name || '', description: body.description, fields: body.fields }); return Response.json({ status: 'ok', form: f }, { status: 201 }); }
+    catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
+  }
+  return Response.json({ error: 'method not allowed' }, { status: 405 });
 }
 
 // --- Tags ---
