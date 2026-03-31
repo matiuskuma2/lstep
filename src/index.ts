@@ -7,6 +7,9 @@ import { AdminService } from './auth/admin-service';
 import { extractAuth, requireRole } from './auth/middleware';
 import { getAdminHtml } from './pages/admin';
 import { getDashboardHtml, getTrackedLinksPageHtml, getPlaceholderPageHtml } from './pages/dashboard';
+import { getScenariosPageHtml } from './pages/scenarios';
+import { ScenarioAdapter } from './adapters/scenario';
+import type { CreateScenarioInput, CreateStepInput } from './adapters/scenario';
 
 export interface Env {
   DB: D1Database;
@@ -31,7 +34,7 @@ export default {
       if (url.pathname === '/health') {
         response = Response.json({ status: 'ok', environment: env.ENVIRONMENT, timestamp: new Date().toISOString() });
       } else if (url.pathname === '/') {
-        response = Response.json({ name: 'lchatAI-api', environment: env.ENVIRONMENT, version: '0.9.0' });
+        response = Response.json({ name: 'lchatAI-api', environment: env.ENVIRONMENT, version: '0.10.0' });
       } else if (url.pathname === '/api/auth/login' && request.method === 'POST') {
         response = await handleLogin(request, env);
       } else if (url.pathname === '/api/auth/me' && request.method === 'GET') {
@@ -42,6 +45,8 @@ export default {
         response = await handleAdminUsers(request, env);
       } else if (url.pathname === '/api/admin/tenants') {
         response = await handleAdminTenants(request, env);
+      } else if (url.pathname === '/api/scenarios' || url.pathname.startsWith('/api/scenarios/')) {
+        response = await handleScenarios(request, url, env);
       } else if (url.pathname === '/api/ai/test') {
         response = await handleAiTest(request, env);
       } else if (url.pathname === '/api/ai/chat') {
@@ -61,7 +66,7 @@ export default {
       } else if (url.pathname === '/dashboard/tracked-links') {
         response = new Response(getTrackedLinksPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/scenarios') {
-        response = new Response(getPlaceholderPageHtml('シナリオ管理', 'scenarios'), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+        response = new Response(getScenariosPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/friends') {
         response = new Response(getPlaceholderPageHtml('友だち管理', 'friends'), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/tags') {
@@ -159,6 +164,63 @@ async function handleBootstrap(request: Request, env: Env): Promise<Response> {
     const user = await auth.bootstrap(loginId, password, email);
     return Response.json({ status: 'ok', message: 'Super admin created. Go to /login to sign in.', user }, { status: 201 });
   } catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 409 }); }
+}
+
+// --- Scenarios ---
+async function handleScenarios(request: Request, url: URL, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+  const adapter = new ScenarioAdapter(env.DB);
+  const tenantId = auth!.tenant_id;
+
+  // GET /api/scenarios
+  if (url.pathname === '/api/scenarios' && request.method === 'GET') {
+    const scenarios = tenantId ? await adapter.list(tenantId) : await adapter.listAll();
+    return Response.json({ status: 'ok', scenarios });
+  }
+  // POST /api/scenarios
+  if (url.pathname === '/api/scenarios' && request.method === 'POST') {
+    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
+    let body: CreateScenarioInput;
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    try { const s = await adapter.create(tenantId, body); return Response.json({ status: 'ok', scenario: s }, { status: 201 }); }
+    catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
+  }
+  // /api/scenarios/:id or /api/scenarios/:id/steps
+  const parts = url.pathname.replace('/api/scenarios/', '').split('/');
+  const scenarioId = parts[0];
+  if (!scenarioId) return Response.json({ error: 'missing id' }, { status: 400 });
+
+  if (parts[1] === 'steps') {
+    if (request.method === 'GET') {
+      const steps = await adapter.getSteps(scenarioId);
+      return Response.json({ status: 'ok', steps });
+    }
+    if (request.method === 'POST') {
+      let body: CreateStepInput;
+      try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+      try { const step = await adapter.addStep(scenarioId, body); return Response.json({ status: 'ok', step }, { status: 201 }); }
+      catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
+    }
+  }
+
+  // GET /api/scenarios/:id
+  if (request.method === 'GET') {
+    const scenario = await adapter.getById(scenarioId);
+    if (!scenario) return Response.json({ error: 'not found' }, { status: 404 });
+    return Response.json({ status: 'ok', scenario });
+  }
+  // PUT /api/scenarios/:id
+  if (request.method === 'PUT') {
+    let body: Partial<CreateScenarioInput>;
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    await adapter.update(scenarioId, body);
+    const updated = await adapter.getById(scenarioId);
+    return Response.json({ status: 'ok', scenario: updated });
+  }
+  return Response.json({ error: 'method not allowed' }, { status: 405 });
 }
 
 // --- AI ---
