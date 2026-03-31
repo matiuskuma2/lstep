@@ -30,7 +30,7 @@ export default {
     const url = new URL(request.url);
     const corsHeaders = {
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     };
     if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -48,6 +48,8 @@ export default {
         response = await handleMe(request, env);
       } else if (url.pathname === '/api/admin/bootstrap') {
         response = await handleBootstrap(request, env);
+      } else if (url.pathname.startsWith('/api/admin/users/') && url.pathname !== '/api/admin/users') {
+        response = await handleAdminUserById(request, url, env);
       } else if (url.pathname === '/api/admin/users') {
         response = await handleAdminUsers(request, env);
       } else if (url.pathname === '/api/admin/tenants') {
@@ -127,6 +129,42 @@ async function handleAdminUsers(request: Request, env: Env): Promise<Response> {
     } catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
+}
+
+async function handleAdminUserById(request: Request, url: URL, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'ADMIN_JWT_SECRET not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin');
+  if (denied) return denied;
+
+  const authService = new AuthService(env.DB, env.ADMIN_JWT_SECRET);
+  const adminService = new AdminService(env.DB, authService);
+  const segments = url.pathname.split('/');
+  // /api/admin/users/:id => segments[4]
+  // /api/admin/users/:id/status => segments[5]
+  const userId = segments[4];
+
+  try {
+    if (request.method === 'PATCH' && segments[5] === 'status') {
+      let body: { status?: string };
+      try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+      if (body.status !== 'active' && body.status !== 'inactive') {
+        return Response.json({ status: 'error', message: 'status must be "active" or "inactive"' }, { status: 400 });
+      }
+      const user = await adminService.updateUserStatus(userId, body.status, auth!.user_id);
+      return Response.json({ status: 'ok', user });
+    }
+
+    if (request.method === 'DELETE') {
+      await adminService.deleteUser(userId, auth!.user_id);
+      return Response.json({ status: 'ok' });
+    }
+
+    return Response.json({ error: 'method not allowed' }, { status: 405 });
+  } catch (err: any) {
+    const status = err.message === 'User not found' ? 404 : 400;
+    return Response.json({ status: 'error', message: err.message }, { status });
+  }
 }
 
 async function handleAdminTenants(request: Request, env: Env): Promise<Response> {
