@@ -215,7 +215,77 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
   let response: Response;
 
   try {
-      if (url.pathname === '/api/debug/upstream-smoke' && request.method === 'GET') {
+      if (url.pathname === '/api/verify' && request.method === 'GET') {
+        // Automated verification: checks all critical systems
+        const checks: Record<string, {status: string; detail?: string}> = {};
+
+        // C1: Health
+        checks['health'] = { status: 'PASS' };
+
+        // C2: DB connection
+        try {
+          const t = await env.DB.prepare('SELECT COUNT(*) as cnt FROM tenants').first<{cnt: number}>();
+          checks['db_connection'] = { status: 'PASS', detail: 'tenants=' + (t?.cnt || 0) };
+        } catch (e: any) { checks['db_connection'] = { status: 'FAIL', detail: e.message }; }
+
+        // C3: Friends table
+        try {
+          const f = await env.DB.prepare('SELECT COUNT(*) as cnt FROM friends').first<{cnt: number}>();
+          checks['friends_table'] = { status: 'PASS', detail: 'count=' + (f?.cnt || 0) };
+        } catch (e: any) { checks['friends_table'] = { status: 'FAIL', detail: e.message }; }
+
+        // C4: Scenarios + steps
+        try {
+          const s = await env.DB.prepare('SELECT COUNT(*) as cnt FROM scenarios').first<{cnt: number}>();
+          const st = await env.DB.prepare('SELECT COUNT(*) as cnt FROM scenario_steps').first<{cnt: number}>();
+          checks['scenarios'] = { status: 'PASS', detail: 'scenarios=' + (s?.cnt || 0) + ' steps=' + (st?.cnt || 0) };
+        } catch (e: any) { checks['scenarios'] = { status: 'FAIL', detail: e.message }; }
+
+        // C5: LINE accounts
+        try {
+          const la = await env.DB.prepare('SELECT COUNT(*) as cnt FROM line_accounts WHERE is_active = 1').first<{cnt: number}>();
+          checks['line_accounts'] = (la?.cnt || 0) > 0 ? { status: 'PASS', detail: 'active=' + la?.cnt } : { status: 'WARN', detail: 'no active accounts' };
+        } catch (e: any) { checks['line_accounts'] = { status: 'FAIL', detail: e.message }; }
+
+        // C6: Enrollments
+        try {
+          const e = await env.DB.prepare("SELECT COUNT(*) as cnt FROM friend_scenarios WHERE status = 'active'").first<{cnt: number}>();
+          checks['enrollments'] = { status: 'PASS', detail: 'active=' + (e?.cnt || 0) };
+        } catch (e: any) { checks['enrollments'] = { status: 'FAIL', detail: e.message }; }
+
+        // C7: Messages log
+        try {
+          const m = await env.DB.prepare('SELECT COUNT(*) as cnt FROM messages_log').first<{cnt: number}>();
+          checks['messages_log'] = { status: 'PASS', detail: 'total=' + (m?.cnt || 0) };
+        } catch (e: any) { checks['messages_log'] = { status: 'FAIL', detail: e.message }; }
+
+        // C8: Cron running
+        try {
+          const c = await env.DB.prepare("SELECT created_at FROM ai_execution_logs WHERE intent = 'cron_debug' ORDER BY created_at DESC LIMIT 1").first<{created_at: string}>();
+          checks['cron'] = c ? { status: 'PASS', detail: 'last_run=' + c.created_at } : { status: 'WARN', detail: 'no cron logs found' };
+        } catch (e: any) { checks['cron'] = { status: 'FAIL', detail: e.message }; }
+
+        // C9: Webhook working
+        try {
+          const w = await env.DB.prepare("SELECT created_at FROM ai_execution_logs WHERE intent = 'webhook_debug' ORDER BY created_at DESC LIMIT 1").first<{created_at: string}>();
+          checks['webhook'] = w ? { status: 'PASS', detail: 'last_event=' + w.created_at } : { status: 'WARN', detail: 'no webhook logs' };
+        } catch (e: any) { checks['webhook'] = { status: 'FAIL', detail: e.message }; }
+
+        // C10: Upstream routes
+        try {
+          const testUrl = new URL('/lh/api/friends', request.url).toString();
+          const res = await app.fetch(new Request(testUrl), env);
+          checks['upstream_routes'] = res.status < 500 ? { status: 'PASS', detail: 'status=' + res.status } : { status: 'FAIL', detail: 'status=' + res.status };
+        } catch (e: any) { checks['upstream_routes'] = { status: 'FAIL', detail: e.message }; }
+
+        const passed = Object.values(checks).filter(c => c.status === 'PASS').length;
+        const failed = Object.values(checks).filter(c => c.status === 'FAIL').length;
+        const warned = Object.values(checks).filter(c => c.status === 'WARN').length;
+        const total = Object.keys(checks).length;
+        const overall = failed > 0 ? 'FAIL' : warned > 0 ? 'WARN' : 'PASS';
+
+        response = Response.json({ status: overall, passed, failed, warned, total, checks, version: '0.14.0', timestamp: new Date().toISOString() });
+      } else if (url.pathname === '/api/debug/upstream-smoke' && request.method === 'GET') {
         // Upstream recovery smoke test: check all /lh/api/* endpoints
         const endpoints = [
           '/lh/api/line-accounts', '/lh/api/friends', '/lh/api/scenarios',
