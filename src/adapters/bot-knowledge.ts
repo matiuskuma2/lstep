@@ -3,6 +3,7 @@ export interface Bot {
   tenant_id: string;
   name: string;
   description: string | null;
+  system_prompt: string;
   strategy: string;
   tone: string;
   target_audience: string | null;
@@ -31,6 +32,7 @@ export interface BotWithKnowledge extends Bot {
 export interface CreateBotInput {
   name: string;
   description?: string;
+  system_prompt?: string;
   strategy?: string;
   tone?: string;
   target_audience?: string;
@@ -56,13 +58,14 @@ export class BotAdapter {
     const now = new Date().toISOString();
 
     await this.db.prepare(
-      `INSERT INTO bots (id, tenant_id, name, description, strategy, tone, target_audience, goal, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO bots (id, tenant_id, name, description, system_prompt, strategy, tone, target_audience, goal, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       id,
       tenantId,
       input.name,
       input.description || null,
+      input.system_prompt || '',
       input.strategy || '',
       input.tone || 'professional',
       input.target_audience || null,
@@ -77,6 +80,7 @@ export class BotAdapter {
       tenant_id: tenantId,
       name: input.name,
       description: input.description || null,
+      system_prompt: input.system_prompt || '',
       strategy: input.strategy || '',
       tone: input.tone || 'professional',
       target_audience: input.target_audience || null,

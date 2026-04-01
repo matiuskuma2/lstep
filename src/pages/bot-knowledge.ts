@@ -10,20 +10,19 @@ export function getBotsPageHtml(): string {
       <h3 style="font-size:15px;margin-bottom:12px">Bot\u4f5c\u6210</h3>
       <div class="msg error" id="cErr"></div><div class="msg success" id="cSuc"></div>
       <div class="form-row">
-        <input type="text" id="botName" placeholder="Bot\u540d">
-        <input type="text" id="botStrategy" placeholder="\u6226\u7565\uff08\u5bfe\u8c61\u3084\u65b9\u91dd\uff09">
-        <select id="botTone"><option value="professional">\u30d7\u30ed</option><option value="casual">\u30ab\u30b8\u30e5\u30a2\u30eb</option><option value="friendly">\u30d5\u30ec\u30f3\u30c9\u30ea\u30fc</option></select>
-        <button class="btn btn-primary" onclick="createBot()">\u4f5c\u6210</button>
+        <input type="text" id="botName" placeholder="Bot\u540d" style="flex:1">
+        <input type="text" id="botDesc" placeholder="\u8aac\u660e\uff08\u4efb\u610f\uff09" style="flex:2">
       </div>
-      <div class="form-row" style="margin-top:8px">
-        <input type="text" id="botGoal" placeholder="\u76ee\u6a19\uff08\u4efb\u610f\uff09">
-        <input type="text" id="botTarget" placeholder="\u30bf\u30fc\u30b2\u30c3\u30c8\uff08\u4efb\u610f\uff09">
-        <input type="text" id="botDesc" placeholder="\u8aac\u660e\uff08\u4efb\u610f\uff09">
+      <div style="margin-top:8px">
+        <textarea id="botPrompt" placeholder="\u30b7\u30b9\u30c6\u30e0\u30d7\u30ed\u30f3\u30d7\u30c8\uff08Bot\u306e\u6307\u793a\u3092\u8a73\u3057\u304f\u8a18\u8ff0\uff09" style="width:100%;min-height:120px;padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:13px;outline:none;resize:vertical;font-family:inherit"></textarea>
+      </div>
+      <div style="margin-top:8px;text-align:right">
+        <button class="btn btn-primary" onclick="createBot()">\u4f5c\u6210</button>
       </div>
     </div>
     <div class="card">
       <table>
-        <thead><tr><th>Bot\u540d</th><th>\u6226\u7565</th><th>\u30c8\u30fc\u30f3</th><th>\u30b9\u30c6\u30fc\u30bf\u30b9</th><th>\u4f5c\u6210\u65e5</th></tr></thead>
+        <thead><tr><th>Bot\u540d</th><th>\u8aac\u660e</th><th>\u30d7\u30ed\u30f3\u30d7\u30c8</th><th>\u30b9\u30c6\u30fc\u30bf\u30b9</th><th>\u4f5c\u6210\u65e5</th></tr></thead>
         <tbody id="botList"><tr><td colspan="5">\u8aad\u307f\u8fbc\u307f\u4e2d...</td></tr></tbody>
       </table>
     </div>
@@ -44,7 +43,7 @@ export function getBotsPageHtml(): string {
         const d = await fetchJson('/api/bots');
         showList('botList', d.bots || [], 5, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
           items.map(b =>
-            '<tr style="cursor:pointer" onclick="showBot(\\''+b.id+'\\')"><td>'+esc(b.name)+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">'+esc(b.strategy)+'</td><td>'+b.tone+'</td><td><span class="badge badge-active">'+b.status+'</span></td><td>'+b.created_at.substring(0,10)+'</td></tr>'
+            '<tr style="cursor:pointer" onclick="showBot(\\''+b.id+'\\')"><td>'+esc(b.name)+'</td><td style="max-width:150px;overflow:hidden;text-overflow:ellipsis">'+esc(b.description||'-')+'</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:#666">'+esc((b.system_prompt||'').substring(0,50))+'</td><td><span class="badge badge-active">'+b.status+'</span></td><td>'+b.created_at.substring(0,10)+'</td></tr>'
           ).join('')
         );
       } catch(e) { showError('botList', 5, e.message); }
@@ -53,12 +52,12 @@ export function getBotsPageHtml(): string {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');
       er.style.display='none';su.style.display='none';
       const name=document.getElementById('botName').value;
-      const strategy=document.getElementById('botStrategy').value;
-      if(!name||!strategy){er.textContent='Bot\u540d\u3068\u6226\u7565\u306f\u5fc5\u9808';er.style.display='block';return;}
+      const prompt=document.getElementById('botPrompt').value;
+      if(!name){er.textContent='Bot\u540d\u306f\u5fc5\u9808';er.style.display='block';return;}
       try {
-        const r=await fetch('/api/bots',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,strategy,tone:document.getElementById('botTone').value,goal:document.getElementById('botGoal').value||undefined,target_audience:document.getElementById('botTarget').value||undefined,description:document.getElementById('botDesc').value||undefined,tenant_id:getSelectedTenantId()||undefined})});
+        const r=await fetch('/api/bots',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,system_prompt:prompt,description:document.getElementById('botDesc').value||undefined,tenant_id:getSelectedTenantId()||undefined})});
         const d=await r.json();
-        if(d.status==='ok'){su.textContent='Bot\u3092\u4f5c\u6210\u3057\u307e\u3057\u305f';su.style.display='block';document.getElementById('botName').value='';document.getElementById('botStrategy').value='';loadBots();}
+        if(d.status==='ok'){su.textContent='Bot\u3092\u4f5c\u6210\u3057\u307e\u3057\u305f';su.style.display='block';document.getElementById('botName').value='';document.getElementById('botPrompt').value='';loadBots();}
         else{er.textContent=d.message||'\u4f5c\u6210\u5931\u6557';er.style.display='block';}
       }catch(e){er.textContent=e.message;er.style.display='block';}
     }
@@ -70,7 +69,7 @@ export function getBotsPageHtml(): string {
         if(d.status!=='ok') return;
         const b=d.bot;
         document.getElementById('detailTitle').textContent=b.name;
-        document.getElementById('detailInfo').innerHTML='\u6226\u7565: '+esc(b.strategy)+'<br>\u30c8\u30fc\u30f3: '+b.tone+(b.goal?' | \u76ee\u6a19: '+esc(b.goal):'')+(b.target_audience?' | \u30bf\u30fc\u30b2\u30c3\u30c8: '+esc(b.target_audience):'');
+        document.getElementById('detailInfo').innerHTML=(b.description?'<div style="margin-bottom:8px;color:#666">'+esc(b.description)+'</div>':'')+(b.system_prompt?'<div style="background:#f5f5f5;padding:10px 12px;border-radius:8px;font-size:12px;font-family:monospace;white-space:pre-wrap;max-height:200px;overflow-y:auto">'+esc(b.system_prompt)+'</div>':'<div style="color:#999;font-size:13px">\u30d7\u30ed\u30f3\u30d7\u30c8\u672a\u8a2d\u5b9a</div>');
         const kl=b.knowledge||[];
         document.getElementById('knowledgeBindings').innerHTML=kl.length?kl.map(k=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f0f0f0"><span>'+esc(k.title)+' <span style="color:#999;font-size:11px">['+k.category+']</span></span><button class="btn" style="padding:2px 8px;font-size:11px;background:#ffebee;color:#c62828" onclick="unbindKnowledge(\\''+k.id+'\\')">\u89e3\u9664</button></div>').join(''):'<span style="color:#999">\u7d10\u4ed8\u3051\u306a\u3057</span>';
         document.getElementById('detailPanel').style.display='block';
