@@ -430,11 +430,11 @@ async function scheduled(
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     // /lh/* and /webhook → Hono app (LINE Harness upstream + webhook)
     if (url.pathname.startsWith('/lh/') || url.pathname === '/lh' || url.pathname === '/webhook') {
-      return app.fetch(request, env);
+      return app.fetch(request, env, ctx);
     }
     // Everything else → legacy handler (preserves auth headers)
     return legacyFetch(request, env);
