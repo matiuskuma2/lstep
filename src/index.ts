@@ -153,8 +153,16 @@ app.all('*', async (c) => {
   let response: Response;
 
   try {
-      if (url.pathname === '/api/debug/db' && request.method === 'GET') {
-        // Temporary debug endpoint - shows raw DB state
+      if (url.pathname === '/api/debug/schema' && request.method === 'GET') {
+        // Live schema check: returns actual table names and columns from D1
+        const tables = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name").all();
+        const schema: Record<string, string[]> = {};
+        for (const t of (tables.results || [])) {
+          const cols = await env.DB.prepare(`PRAGMA table_info('${(t as any).name}')`).all();
+          schema[(t as any).name] = (cols.results || []).map((c: any) => c.name);
+        }
+        response = Response.json({ status: 'ok', tables: Object.keys(schema).length, schema });
+      } else if (url.pathname === '/api/debug/db' && request.method === 'GET') {
         const friends = await env.DB.prepare('SELECT id, tenant_id, display_name, line_user_id, status, is_following FROM friends ORDER BY created_at DESC LIMIT 10').all();
         const accounts = await env.DB.prepare('SELECT id, channel_id, name, is_active FROM line_accounts ORDER BY created_at DESC LIMIT 10').all();
         const tenants = await env.DB.prepare('SELECT id, name FROM tenants ORDER BY created_at DESC LIMIT 5').all();

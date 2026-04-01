@@ -50,6 +50,54 @@ Explain why this is needed. Business context or design rationale.
 **Related Issues / PRs:**
 - #
 
+## Pre-Implementation Audit Gate
+**以下が全て埋まるまで、この Issue は Codex に渡してはいけない。**
+
+### Dependency manifest
+- 必要な package:
+- 必要な utility file:
+- unresolved import 確認結果:
+
+### Required files manifest
+- この実装で必須の既存ファイル:
+- 新規追加が必要なファイル:
+- 削除/無効化するファイル:
+
+### Route manifest
+- 対象 route:
+- 既存 route 流用 or 独自 route:
+- source of truth:
+
+### Schema diff
+- 対象テーブル:
+- 追加/変更カラム:
+- 衝突カラム:
+- migration リスク:
+- `/api/debug/schema` で実DB確認済み: [ ] Yes [ ] No
+
+### Live schema check result
+<!-- /api/debug/schema の結果から対象テーブルのカラム一覧を貼る -->
+```
+(ここに貼る)
+```
+
+### Smoke test
+- URL:
+- API:
+- DB evidence:
+- PASS条件:
+- FAIL条件:
+
+### Audit Gate Result
+- [ ] dependency manifest 完了
+- [ ] required files manifest 完了
+- [ ] route manifest 完了
+- [ ] schema diff 完了
+- [ ] live schema check 完了
+- [ ] smoke test 定義完了
+
+**⚠️ 上記がすべて完了するまで Codex に渡さない。**
+
 ## Risk Checklist
 - [ ] null / undefined / empty input handling confirmed
 - [ ] tenant boundary respected (no cross-tenant access)
