@@ -154,7 +154,7 @@ app.post('/webhook', async (c) => {
       } catch {}
 
       if (event.type === 'follow' && lineUserId) {
-        // Step 2: Save friend FIRST (no external API calls, fast)
+        // Save friend
         const existing = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first();
         if (existing) {
           await env.DB.prepare("UPDATE friends SET is_following = 1, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
@@ -165,7 +165,7 @@ app.post('/webhook', async (c) => {
           await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, lineUserId, lineUserId, 'active', 1, 0, now, now).run();
         }
 
-        // Step 3: Enrollment + push
+        // Enrollment + immediate push
         try {
           const scenario = await env.DB.prepare("SELECT s.id FROM scenarios s WHERE s.trigger_type = 'friend_add' AND s.status IN ('active','draft') AND EXISTS (SELECT 1 FROM scenario_steps WHERE scenario_id = s.id) LIMIT 1").first<{id: string}>();
           if (scenario) {
@@ -181,29 +181,14 @@ app.post('/webhook', async (c) => {
             }
             const firstStep = await env.DB.prepare('SELECT message_content FROM scenario_steps WHERE scenario_id = ? AND step_order = 1 LIMIT 1').bind(scenario.id).first<{message_content: string}>();
             if (firstStep) {
-              c.executionCtx.waitUntil(
-                fetch('https://api.line.me/v2/bot/message/push', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + matchedAccount.channel_access_token },
-                  body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text: firstStep.message_content }] }),
-                }).catch(() => {})
-              );
+              await fetch('https://api.line.me/v2/bot/message/push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + matchedAccount.channel_access_token },
+                body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text: firstStep.message_content }] }),
+              });
             }
           }
         } catch {}
-
-        // Profile update (waitUntil ensures it completes after response)
-        c.executionCtx.waitUntil(
-          fetch('https://api.line.me/v2/bot/profile/' + lineUserId, {
-            headers: { 'Authorization': 'Bearer ' + matchedAccount.channel_access_token }
-        }).then(r => r.ok ? r.json() : null).then(p => {
-          if (p && p.displayName) {
-            env.DB.prepare("UPDATE friends SET display_name = ? WHERE line_user_id = ?").bind(p.displayName, lineUserId).run();
-          }
-        }).catch(() => {})
-        );
-
-        try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'SAVED: name=' + displayName + ' existing=' + !!existing, 'webhook_debug').run(); } catch {}
 
       } else if (event.type === 'unfollow' && lineUserId) {
         await env.DB.prepare("UPDATE friends SET is_following = 0, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
