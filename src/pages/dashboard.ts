@@ -7,13 +7,17 @@ export function getDashboardHtml(): string {
     <script>
     async function loadDashboard() {
       try {
-        const d = await fetchJson('/api/tracked-links');
-        const links = d.links || [];
+        const [linksD, friendsD, scenariosD, cvsD] = await Promise.all([
+          fetchJson('/api/tracked-links'),
+          fetchJson('/api/friends'),
+          fetchJson('/api/scenarios'),
+          fetchJson('/api/conversion-points'),
+        ]);
         document.getElementById('stats').innerHTML =
-          '<div class="stat"><div class="num">' + links.length + '</div><div class="label">トラッキングリンク</div></div>' +
-          '<div class="stat"><div class="num">-</div><div class="label">シナリオ</div></div>' +
-          '<div class="stat"><div class="num">-</div><div class="label">友だち</div></div>' +
-          '<div class="stat"><div class="num">-</div><div class="label">CV</div></div>';
+          '<div class="stat"><div class="num">' + (linksD.links||[]).length + '</div><div class="label">トラッキングリンク</div></div>' +
+          '<div class="stat"><div class="num">' + (scenariosD.scenarios||[]).length + '</div><div class="label">シナリオ</div></div>' +
+          '<div class="stat"><div class="num">' + (friendsD.friends||[]).length + '</div><div class="label">友だち</div></div>' +
+          '<div class="stat"><div class="num">' + (cvsD.conversion_points||[]).length + '</div><div class="label">CV</div></div>';
       } catch(e) {
         document.getElementById('stats').innerHTML = '<div class="stat"><div class="num" style="color:#c62828">-</div><div class="label" style="color:#c62828">' + esc(e.message) + '</div></div>';
       }
