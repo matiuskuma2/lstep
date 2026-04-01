@@ -11,7 +11,7 @@ import {
   logAdConversion,
   type AdPlatformConfig,
   type RefTracking,
-} from '@line-crm/db';
+} from '../db/index.js';
 
 export async function sendAdConversions(
   db: D1Database,

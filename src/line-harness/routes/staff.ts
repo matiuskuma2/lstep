@@ -7,8 +7,8 @@ import {
   deleteStaffMember,
   regenerateStaffApiKey,
   countActiveStaffByRole,
-} from '@line-crm/db';
-import type { StaffMember } from '@line-crm/db';
+} from '../db/index.js';
+import type { StaffMember } from '../db/index.js';
 import { requireRole } from '../middleware/role-guard.js';
 import type { Env } from '../index.js';
 

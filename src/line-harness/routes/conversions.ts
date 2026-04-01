@@ -7,7 +7,7 @@ import {
   trackConversion,
   getConversionEvents,
   getConversionReport,
-} from '@line-crm/db';
+} from '../db/index.js';
 import type { Env } from '../index.js';
 
 const conversions = new Hono<Env>();

@@ -22,9 +22,9 @@ import {
   enrollFriendInScenario,
   jstNow,
   getFriendScore,
-} from '@line-crm/db';
-import { LineClient } from '@line-crm/line-sdk';
-import type { Message } from '@line-crm/line-sdk';
+} from '../db/index.js';
+import { LineClient } from '../line-sdk/index.js';
+import type { Message } from '../line-sdk/index.js';
 import { sendAdConversions } from './ad-conversion.js';
 
 export interface EventPayload {

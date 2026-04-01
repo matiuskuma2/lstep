@@ -6,9 +6,9 @@ import {
   completeFriendScenario,
   getFriendById,
   jstNow,
-} from '@line-crm/db';
-import type { LineClient } from '@line-crm/line-sdk';
-import type { Message } from '@line-crm/line-sdk';
+} from '../db/index.js';
+import type { LineClient } from '../line-sdk/index.js';
+import type { Message } from '../line-sdk/index.js';
 import { jitterDeliveryTime, addJitter, sleep } from './stealth.js';
 
 /**

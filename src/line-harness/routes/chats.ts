@@ -11,7 +11,7 @@ import {
   createChat,
   updateChat,
   jstNow,
-} from '@line-crm/db';
+} from '../db/index.js';
 import type { Env } from '../index.js';
 
 const chats = new Hono<Env>();
@@ -295,7 +295,7 @@ chats.post('/api/chats/:id/send', async (c) => {
     if (!friend) return c.json({ success: false, error: 'Friend not found' }, 404);
 
     // LINE APIでメッセージ送信
-    const { LineClient } = await import('@line-crm/line-sdk');
+    const { LineClient } = await import('../line-sdk/index.js');
     const lineClient = new LineClient(c.env.LINE_CHANNEL_ACCESS_TOKEN);
     const messageType = body.messageType ?? 'text';
 

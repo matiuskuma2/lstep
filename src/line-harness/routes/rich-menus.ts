@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { LineClient } from '@line-crm/line-sdk';
-import { getFriendById } from '@line-crm/db';
+import { LineClient } from '../line-sdk/index.js';
+import { getFriendById } from '../db/index.js';
 import type { Env } from '../index.js';
 
 const richMenus = new Hono<Env>();

@@ -16,11 +16,14 @@ ENVIRONMENT = "production"
 # Secrets (set via Cloudflare Dashboard or wrangler secret put):
 #   - OPENAI_API_KEY
 #   - ADMIN_JWT_SECRET
+#   - LINE_CHANNEL_SECRET
+#   - LINE_CHANNEL_ACCESS_TOKEN
+#   - API_KEY (for LINE Harness API auth)
 # Do NOT put secrets in this file.
 
-# Cron triggers (uncomment when step delivery is ready)
-# [triggers]
-# crons = ["*/1 * * * *"]
+# Cron triggers for step delivery (every 5 minutes)
+[triggers]
+crons = ["*/5 * * * *"]
 
 # --- Staging environment ---
 [env.staging]

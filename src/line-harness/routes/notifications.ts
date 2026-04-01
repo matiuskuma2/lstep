@@ -6,7 +6,7 @@ import {
   updateNotificationRule,
   deleteNotificationRule,
   getNotifications,
-} from '@line-crm/db';
+} from '../db/index.js';
 import type { Env } from '../index.js';
 
 const notifications = new Hono<Env>();

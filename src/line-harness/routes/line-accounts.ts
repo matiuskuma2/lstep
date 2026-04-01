@@ -5,8 +5,8 @@ import {
   createLineAccount,
   updateLineAccount,
   deleteLineAccount,
-} from '@line-crm/db';
-import type { LineAccount as DbLineAccount } from '@line-crm/db';
+} from '../db/index.js';
+import type { LineAccount as DbLineAccount } from '../db/index.js';
 import { requireRole } from '../middleware/role-guard.js';
 import type { Env } from '../index.js';
 

@@ -1,4 +1,4 @@
-import { createTrackedLink } from '@line-crm/db';
+import { createTrackedLink } from '../db/index.js';
 
 // Domains where Universal Links / App Links should be used
 const APP_LINK_DOMAINS = new Set([

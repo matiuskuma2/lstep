@@ -8,10 +8,10 @@ import {
   getFormSubmissions,
   createFormSubmission,
   jstNow,
-} from '@line-crm/db';
-import { getFriendByLineUserId, getFriendById } from '@line-crm/db';
-import { addTagToFriend, enrollFriendInScenario } from '@line-crm/db';
-import type { Form as DbForm, FormSubmission as DbFormSubmission } from '@line-crm/db';
+} from '../db/index.js';
+import { getFriendByLineUserId, getFriendById } from '../db/index.js';
+import { addTagToFriend, enrollFriendInScenario } from '../db/index.js';
+import type { Form as DbForm, FormSubmission as DbFormSubmission } from '../db/index.js';
 import type { Env } from '../index.js';
 
 const forms = new Hono<Env>();
@@ -264,11 +264,11 @@ forms.post('/api/forms/:id/submit', async (c) => {
           const friend = await getFriendById(db, friendId!);
           if (!friend?.line_user_id) { console.log('Form reply: no line_user_id'); return; }
           console.log('Form reply: sending to', friend.line_user_id);
-          const { LineClient } = await import('@line-crm/line-sdk');
+          const { LineClient } = await import('../line-sdk/index.js');
           // Resolve access token from friend's account (multi-account support)
           let accessToken = c.env.LINE_CHANNEL_ACCESS_TOKEN;
           if ((friend as unknown as Record<string, unknown>).line_account_id) {
-            const { getLineAccountById } = await import('@line-crm/db');
+            const { getLineAccountById } = await import('../db/index.js');
             const account = await getLineAccountById(db, (friend as unknown as Record<string, unknown>).line_account_id as string);
             if (account) accessToken = account.channel_access_token;
           }

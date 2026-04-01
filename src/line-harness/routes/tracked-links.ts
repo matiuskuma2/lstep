@@ -7,9 +7,9 @@ import {
   recordLinkClick,
   getLinkClicks,
   getFriendByLineUserId,
-} from '@line-crm/db';
-import { addTagToFriend, enrollFriendInScenario } from '@line-crm/db';
-import type { TrackedLink } from '@line-crm/db';
+} from '../db/index.js';
+import { addTagToFriend, enrollFriendInScenario } from '../db/index.js';
+import type { TrackedLink } from '../db/index.js';
 import type { Env } from '../index.js';
 
 const trackedLinks = new Hono<Env>();
