@@ -177,34 +177,30 @@ app.post('/webhook', async (c) => {
           await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, displayName, lineUserId, 'active', 1, 0, now, now).run();
         }
 
-        // Step 3: Immediate first step + enrollment for subsequent steps
+        // Step 3: Enrollment FIRST, then push (avoid Worker timeout before enrollment)
         try {
           const scenario = await env.DB.prepare("SELECT s.id FROM scenarios s WHERE s.trigger_type = 'friend_add' AND s.status IN ('active','draft') AND EXISTS (SELECT 1 FROM scenario_steps WHERE scenario_id = s.id) LIMIT 1").first<{id: string}>();
-          try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'S3: scenario=' + (scenario ? scenario.id.substring(0,8) : 'none'), 'webhook_debug').run(); } catch {}
           if (scenario) {
-            const firstStep = await env.DB.prepare('SELECT id, message_content FROM scenario_steps WHERE scenario_id = ? AND step_order = 1 LIMIT 1').bind(scenario.id).first<{id: string; message_content: string}>();
-            if (firstStep) {
-              await fetch('https://api.line.me/v2/bot/message/push', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + matchedAccount.channel_access_token },
-                body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text: firstStep.message_content }] }),
-              });
-            }
             const friend = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first<{id: string}>();
-            try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'S3: friend=' + (friend ? friend.id.substring(0,8) : 'NOT_FOUND'), 'webhook_debug').run(); } catch {}
             if (friend) {
+              // Enrollment FIRST
               await env.DB.prepare('DELETE FROM friend_scenarios WHERE friend_id = ?').bind(friend.id).run();
               const hasStep2 = await env.DB.prepare('SELECT id FROM scenario_steps WHERE scenario_id = ? AND step_order = 2 LIMIT 1').bind(scenario.id).first();
               const now = new Date().toISOString();
               const nextDelivery = hasStep2 ? new Date(Date.now() + 60000).toISOString() : null;
-              try {
-                await env.DB.prepare('INSERT INTO friend_scenarios (id, friend_id, scenario_id, current_step_order, status, started_at, next_delivery_at, updated_at) VALUES (?,?,?,?,?,?,?,?)').bind(
-                  crypto.randomUUID(), friend.id, scenario.id, 1, nextDelivery ? 'active' : 'completed', now, nextDelivery, now
-                ).run();
-                try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'S3: ENROLLED next=' + (nextDelivery || 'done'), 'webhook_debug').run(); } catch {}
-              } catch (ie: any) {
-                try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'S3_INSERT: ' + (ie.message || String(ie)), 'webhook_debug').run(); } catch {}
-              }
+              await env.DB.prepare('INSERT INTO friend_scenarios (id, friend_id, scenario_id, current_step_order, status, started_at, next_delivery_at, updated_at) VALUES (?,?,?,?,?,?,?,?)').bind(
+                crypto.randomUUID(), friend.id, scenario.id, 1, nextDelivery ? 'active' : 'completed', now, nextDelivery, now
+              ).run();
+            }
+
+            // Push LAST (external API call that may be slow)
+            const firstStep = await env.DB.prepare('SELECT message_content FROM scenario_steps WHERE scenario_id = ? AND step_order = 1 LIMIT 1').bind(scenario.id).first<{message_content: string}>();
+            if (firstStep) {
+              fetch('https://api.line.me/v2/bot/message/push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + matchedAccount.channel_access_token },
+                body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text: firstStep.message_content }] }),
+              }).catch(() => {});
             }
           }
         } catch (err: any) {
