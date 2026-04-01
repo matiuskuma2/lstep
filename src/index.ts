@@ -226,7 +226,19 @@ app.get('/webhook', (c) => c.json({ status: 'ok', message: 'Webhook endpoint act
 
 // Fallback: existing lchatAI routes
 app.all('*', async (c) => {
-  const request = c.req.raw;
+  // Build a fresh Request with all original headers preserved
+  const originalHeaders = new Headers();
+  c.req.raw.headers.forEach((v, k) => originalHeaders.set(k, v));
+  const bodyMethods = ['POST', 'PUT', 'PATCH'];
+  let bodyContent: string | null = null;
+  if (bodyMethods.includes(c.req.method)) {
+    try { bodyContent = await c.req.text(); } catch {}
+  }
+  const request = new Request(c.req.url, {
+    method: c.req.method,
+    headers: originalHeaders,
+    body: bodyContent,
+  });
   const env = c.env;
   const url = new URL(request.url);
   const corsHeaders = {
