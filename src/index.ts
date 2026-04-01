@@ -181,31 +181,27 @@ app.post('/webhook', async (c) => {
         try {
           const friend = await env.DB.prepare('SELECT id, tenant_id FROM friends WHERE line_user_id = ?').bind(lineUserId).first<{id: string; tenant_id: string}>();
           if (friend) {
-            const scenario = await env.DB.prepare("SELECT id FROM scenarios WHERE trigger_type = 'friend_add' AND status IN ('active', 'draft') AND tenant_id = ? LIMIT 1").bind(friend.tenant_id).first<{id: string}>();
+            // Delete old enrollments so re-follow works
+            await env.DB.prepare('DELETE FROM friend_scenarios WHERE friend_id = ?').bind(friend.id).run();
+
+            // Find scenario WITH steps
+            const scenario = await env.DB.prepare("SELECT s.id FROM scenarios s WHERE s.trigger_type = 'friend_add' AND s.status IN ('active', 'draft') AND s.tenant_id = ? AND EXISTS (SELECT 1 FROM scenario_steps WHERE scenario_id = s.id) LIMIT 1").bind(friend.tenant_id).first<{id: string}>();
             if (scenario) {
-              const enrolled = await env.DB.prepare('SELECT id FROM friend_scenarios WHERE friend_id = ? AND scenario_id = ?').bind(friend.id, scenario.id).first();
-              if (!enrolled) {
-                // Get first step
-                const firstStep = await env.DB.prepare('SELECT id, message_type, message_content, delay_minutes FROM scenario_steps WHERE scenario_id = ? AND step_order = 1 LIMIT 1').bind(scenario.id).first<{id: string; message_type: string; message_content: string; delay_minutes: number}>();
+              const firstStep = await env.DB.prepare('SELECT id, message_content FROM scenario_steps WHERE scenario_id = ? AND step_order = 1 LIMIT 1').bind(scenario.id).first<{id: string; message_content: string}>();
+              const secondStep = await env.DB.prepare('SELECT delay_minutes FROM scenario_steps WHERE scenario_id = ? AND step_order = 2 LIMIT 1').bind(scenario.id).first<{delay_minutes: number}>();
+              const now = new Date().toISOString();
+              const nextDelivery = secondStep ? new Date(Date.now() + (secondStep.delay_minutes || 5) * 60 * 1000).toISOString() : null;
 
-                // Calculate next delivery for step 2
-                const secondStep = await env.DB.prepare('SELECT delay_minutes FROM scenario_steps WHERE scenario_id = ? AND step_order = 2 LIMIT 1').bind(scenario.id).first<{delay_minutes: number}>();
-                const now = new Date().toISOString();
-                const nextDelivery = secondStep ? new Date(Date.now() + (secondStep.delay_minutes || 5) * 60 * 1000).toISOString() : null;
+              await env.DB.prepare('INSERT INTO friend_scenarios (id, friend_id, scenario_id, current_step_order, status, started_at, next_delivery_at, updated_at) VALUES (?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(), friend.id, scenario.id, firstStep ? 1 : 0, nextDelivery ? 'active' : 'completed', now, nextDelivery, now).run();
 
-                // Enroll with step 1 already delivered
-                const enrollId = crypto.randomUUID();
-                await env.DB.prepare('INSERT INTO friend_scenarios (id, friend_id, scenario_id, current_step_order, status, started_at, next_delivery_at, updated_at) VALUES (?,?,?,?,?,?,?,?)').bind(enrollId, friend.id, scenario.id, firstStep ? 1 : 0, nextDelivery ? 'active' : 'completed', now, nextDelivery, now).run();
-
-                // Immediately send first step if exists
-                if (firstStep) {
-                  await fetch('https://api.line.me/v2/bot/message/push', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + matchedAccount.channel_access_token },
-                    body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text: firstStep.message_content }] }),
-                  });
-                  await env.DB.prepare("INSERT INTO messages_log (id, friend_id, direction, message_type, content, scenario_step_id, delivery_type, created_at) VALUES (?,?,?,?,?,?,?,datetime('now'))").bind(crypto.randomUUID(), friend.id, 'outgoing', 'text', firstStep.message_content, firstStep.id, 'push').run();
-                }
+              // Immediately send first step
+              if (firstStep) {
+                await fetch('https://api.line.me/v2/bot/message/push', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + matchedAccount.channel_access_token },
+                  body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text: firstStep.message_content }] }),
+                });
+                await env.DB.prepare("INSERT INTO messages_log (id, friend_id, direction, message_type, content, scenario_step_id, delivery_type, created_at) VALUES (?,?,?,?,?,?,?,datetime('now'))").bind(crypto.randomUUID(), friend.id, 'outgoing', 'text', firstStep.message_content, firstStep.id, 'push').run();
               }
             }
           }
