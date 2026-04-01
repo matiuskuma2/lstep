@@ -165,16 +165,23 @@ app.post('/webhook', async (c) => {
           await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, lineUserId, lineUserId, 'active', 1, 0, now, now).run();
         }
 
-        // Enrollment only (Cron delivers ALL steps including step 1)
+        // Immediate push (this pattern worked in PR #105)
         try {
-          const scenario = await env.DB.prepare("SELECT s.id FROM scenarios s WHERE s.trigger_type = 'friend_add' AND s.status IN ('active','draft') AND EXISTS (SELECT 1 FROM scenario_steps WHERE scenario_id = s.id) LIMIT 1").first<{id: string}>();
-          if (scenario) {
+          const stepMsg = await env.DB.prepare("SELECT ss.message_content, ss.scenario_id FROM scenario_steps ss INNER JOIN scenarios s ON ss.scenario_id = s.id WHERE s.trigger_type = 'friend_add' AND s.status IN ('active','draft') AND ss.step_order = 1 LIMIT 1").first<{message_content: string; scenario_id: string}>();
+          if (stepMsg) {
+            await fetch('https://api.line.me/v2/bot/message/push', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + matchedAccount.channel_access_token },
+              body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text: stepMsg.message_content }] }),
+            });
+            // Enrollment for step 2+ via Cron
             const friend = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first<{id: string}>();
             if (friend) {
               await env.DB.prepare('DELETE FROM friend_scenarios WHERE friend_id = ?').bind(friend.id).run();
               const now = new Date().toISOString();
+              const nextDelivery = new Date(Date.now() + 60000).toISOString();
               await env.DB.prepare('INSERT INTO friend_scenarios (id, friend_id, scenario_id, current_step_order, status, started_at, next_delivery_at, updated_at) VALUES (?,?,?,?,?,?,?,?)').bind(
-                crypto.randomUUID(), friend.id, scenario.id, 0, 'active', now, now, now
+                crypto.randomUUID(), friend.id, stepMsg.scenario_id, 1, 'active', now, nextDelivery, now
               ).run();
             }
           }
