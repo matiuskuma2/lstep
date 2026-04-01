@@ -16,13 +16,12 @@ export async function generatePlan(
 
   if (botKnowledge?.bot) {
     const b = botKnowledge.bot;
-    systemPrompt += '\n\n[Bot Context]\nName: ' + b.name +
-      '\nStrategy: ' + b.strategy +
-      '\nTone: ' + b.tone +
-      (b.target_audience ? '\nTarget: ' + b.target_audience : '') +
-      (b.goal ? '\nGoal: ' + b.goal : '') +
-      (b.description ? '\nDescription: ' + b.description : '') +
-      '\n\nUse this bot\'s strategy, tone, and goals to tailor your scenario suggestions.';
+    if (b.system_prompt) {
+      systemPrompt += '\n\n[Bot System Prompt]\n' + b.system_prompt;
+    }
+    if (b.description) {
+      systemPrompt += '\n\n[Bot Description]\n' + b.description;
+    }
   }
 
   if (botKnowledge?.knowledge && botKnowledge.knowledge.length > 0) {
