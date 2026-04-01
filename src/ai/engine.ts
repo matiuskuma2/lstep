@@ -1,10 +1,12 @@
 import { SYSTEM_PROMPT_V1 } from './prompts';
 import type { AiChatRequest, AiChatResponse, ChatMessage } from './types';
 import type { Bot, KnowledgeItem } from '../adapters/bot-knowledge';
+import type { KnowledgeChunk } from '../adapters/knowledge-chunk';
 
 export interface BotKnowledgeContext {
   bot?: Bot;
   knowledge?: KnowledgeItem[];
+  chunks?: KnowledgeChunk[];
 }
 
 export async function generatePlan(
@@ -24,7 +26,14 @@ export async function generatePlan(
     }
   }
 
-  if (botKnowledge?.knowledge && botKnowledge.knowledge.length > 0) {
+  // Inject knowledge chunks (Phase 1: all chunks; Phase 2: embedding-based)
+  if (botKnowledge?.chunks && botKnowledge.chunks.length > 0) {
+    systemPrompt += '\n\n[Knowledge Context]\nUse the following knowledge chunks to inform your responses:\n';
+    for (const chunk of botKnowledge.chunks) {
+      systemPrompt += '\n---\n' + chunk.chunk_text + '\n';
+    }
+  } else if (botKnowledge?.knowledge && botKnowledge.knowledge.length > 0) {
+    // Fallback: use full knowledge content if no chunks exist
     systemPrompt += '\n\n[Knowledge Context]\nUse the following knowledge to inform your responses:\n';
     for (const k of botKnowledge.knowledge) {
       systemPrompt += '\n--- ' + k.title + ' [' + k.category + '] ---\n' + k.content + '\n';

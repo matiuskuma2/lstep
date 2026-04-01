@@ -2,6 +2,7 @@ import { generatePlan } from './ai/engine';
 import type { BotKnowledgeContext } from './ai/engine';
 import type { AiChatRequest } from './ai/types';
 import { ExecutionLogAdapter } from './adapters/execution-log';
+import { KnowledgeChunkAdapter, chunkText } from './adapters/knowledge-chunk';
 import { TrackedLinkAdapter } from './adapters/tracked-link';
 import type { CreateTrackedLinkInput } from './adapters/tracked-link';
 import { AuthService } from './auth/service';
@@ -498,7 +499,16 @@ async function handleKnowledge(request: Request, env: Env): Promise<Response> {
     try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
     const effectiveTenantId = tenantId || (body as any).tenant_id;
     if (!effectiveTenantId) return Response.json({ status: 'error', message: 'Tenant required (specify tenant_id for super_admin)' }, { status: 400 });
-    try { const item = await adapter.create(effectiveTenantId, body); return Response.json({ status: 'ok', knowledge_item: item }, { status: 201 }); }
+    try {
+      const item = await adapter.create(effectiveTenantId, body);
+      // Auto-chunk the content for RAG
+      try {
+        const chunkAdapter = new KnowledgeChunkAdapter(env.DB);
+        const chunks = chunkText(item.content);
+        await chunkAdapter.createChunks(item.id, chunks);
+      } catch {}
+      return Response.json({ status: 'ok', knowledge_item: item }, { status: 201 });
+    }
     catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
@@ -609,7 +619,12 @@ async function handleAiChat(request: Request, env: Env): Promise<Response> {
     if (body.bot_id && env.DB) {
       const botAdapter = new BotAdapter(env.DB);
       const bot = await botAdapter.getWithKnowledge(body.bot_id);
-      if (bot) { botKnowledge = { bot, knowledge: bot.knowledge }; }
+      if (bot) {
+          const chunkAdapter = new KnowledgeChunkAdapter(env.DB);
+          const knowledgeIds = bot.knowledge.map(k => k.id);
+          const chunks = knowledgeIds.length > 0 ? await chunkAdapter.listByKnowledgeIds(knowledgeIds) : [];
+          botKnowledge = { bot, knowledge: bot.knowledge, chunks };
+        }
     }
     const plan = await generatePlan(body, env.OPENAI_API_KEY, botKnowledge);
     try {
