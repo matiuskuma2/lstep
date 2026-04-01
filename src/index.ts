@@ -121,6 +121,24 @@ app.post('/webhook', async (c) => {
           await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, displayName, lineUserId, 'active', 1, 0, now, now).run();
         }
 
+        // Step 3: Auto-enroll in friend_add scenarios
+        try {
+          const friend = await env.DB.prepare('SELECT id, tenant_id FROM friends WHERE line_user_id = ?').bind(lineUserId).first<{id: string; tenant_id: string}>();
+          if (friend) {
+            const scenarios = await env.DB.prepare("SELECT id FROM scenarios WHERE trigger_type = 'friend_add' AND status = 'active' AND tenant_id = ?").bind(friend.tenant_id).all<{id: string}>();
+            for (const scenario of (scenarios.results || [])) {
+              // Check if already enrolled
+              const enrolled = await env.DB.prepare('SELECT id FROM friend_scenarios WHERE friend_id = ? AND scenario_id = ?').bind(friend.id, scenario.id).first();
+              if (!enrolled) {
+                const firstStep = await env.DB.prepare('SELECT delay_minutes FROM scenario_steps WHERE scenario_id = ? ORDER BY step_order ASC LIMIT 1').bind(scenario.id).first<{delay_minutes: number}>();
+                const delayMs = (firstStep?.delay_minutes || 0) * 60 * 1000;
+                const nextDelivery = new Date(Date.now() + delayMs).toISOString();
+                await env.DB.prepare('INSERT INTO friend_scenarios (id, friend_id, scenario_id, current_step_order, status, started_at, next_delivery_at, updated_at) VALUES (?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(), friend.id, scenario.id, 0, 'active', new Date().toISOString(), nextDelivery, new Date().toISOString()).run();
+              }
+            }
+          }
+        } catch {}
+
         try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'SAVED: name=' + displayName + ' existing=' + !!existing, 'webhook_debug').run(); } catch {}
 
       } else if (event.type === 'unfollow' && lineUserId) {
@@ -266,7 +284,76 @@ async function scheduled(
   env: Env,
   _ctx: ExecutionContext,
 ): Promise<void> {
-  // TODO: Wire step delivery, broadcast, reminder services individually
+  // Step delivery: find friend_scenarios where next_delivery_at <= now and status = active
+  try {
+    const now = new Date().toISOString();
+    const due = await env.DB.prepare(
+      "SELECT fs.id, fs.friend_id, fs.scenario_id, fs.current_step_order FROM friend_scenarios fs WHERE fs.status = 'active' AND fs.next_delivery_at <= ? LIMIT 50"
+    ).bind(now).all<{id: string; friend_id: string; scenario_id: string; current_step_order: number}>();
+
+    for (const enrollment of (due.results || [])) {
+      try {
+        // Get next step
+        const nextOrder = enrollment.current_step_order + 1;
+        const step = await env.DB.prepare(
+          'SELECT id, message_type, message_content, delay_minutes FROM scenario_steps WHERE scenario_id = ? AND step_order = ? LIMIT 1'
+        ).bind(enrollment.scenario_id, nextOrder).first<{id: string; message_type: string; message_content: string; delay_minutes: number}>();
+
+        if (!step) {
+          // No more steps — mark completed
+          await env.DB.prepare("UPDATE friend_scenarios SET status = 'completed', updated_at = datetime('now') WHERE id = ?").bind(enrollment.id).run();
+          continue;
+        }
+
+        // Get friend's line_user_id and account token
+        const friend = await env.DB.prepare('SELECT line_user_id, tenant_id FROM friends WHERE id = ?').bind(enrollment.friend_id).first<{line_user_id: string; tenant_id: string}>();
+        if (!friend?.line_user_id) continue;
+
+        // Get LINE account token (first active account)
+        const account = await env.DB.prepare('SELECT channel_access_token FROM line_accounts WHERE is_active = 1 LIMIT 1').first<{channel_access_token: string}>();
+        if (!account) continue;
+
+        // Send message via LINE Messaging API
+        const pushRes = await fetch('https://api.line.me/v2/bot/message/push', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + account.channel_access_token,
+          },
+          body: JSON.stringify({
+            to: friend.line_user_id,
+            messages: [{ type: step.message_type === 'text' ? 'text' : 'text', text: step.message_content }],
+          }),
+        });
+
+        // Log message
+        await env.DB.prepare(
+          "INSERT INTO messages_log (id, friend_id, direction, message_type, content, scenario_step_id, delivery_type, created_at) VALUES (?,?,?,?,?,?,?,datetime('now'))"
+        ).bind(crypto.randomUUID(), enrollment.friend_id, 'outgoing', step.message_type, step.message_content, step.id, 'push').run();
+
+        // Get next step for scheduling
+        const followingStep = await env.DB.prepare(
+          'SELECT delay_minutes FROM scenario_steps WHERE scenario_id = ? AND step_order = ? LIMIT 1'
+        ).bind(enrollment.scenario_id, nextOrder + 1).first<{delay_minutes: number}>();
+
+        if (followingStep) {
+          const nextDelivery = new Date(Date.now() + (followingStep.delay_minutes || 0) * 60 * 1000).toISOString();
+          await env.DB.prepare(
+            "UPDATE friend_scenarios SET current_step_order = ?, next_delivery_at = ?, updated_at = datetime('now') WHERE id = ?"
+          ).bind(nextOrder, nextDelivery, enrollment.id).run();
+        } else {
+          // Last step delivered — mark completed
+          await env.DB.prepare(
+            "UPDATE friend_scenarios SET current_step_order = ?, status = 'completed', updated_at = datetime('now') WHERE id = ?"
+          ).bind(nextOrder, enrollment.id).run();
+        }
+      } catch (e) {
+        console.error('Step delivery error:', e);
+      }
+    }
+  } catch (e) {
+    console.error('Scheduled handler error:', e);
+  }
 }
 
 export default {
