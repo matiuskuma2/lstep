@@ -51,13 +51,14 @@ export function getScenariosPageHtml(): string {
     function toggleCreate() { const f=document.getElementById('createForm'); f.style.display=f.style.display==='none'?'block':'none'; }
     async function loadScenarios() {
       try {
-        const d = await fetchJson('/api/scenarios');
-        showList('scenarioList', d.scenarios, 5, '\u30b7\u30ca\u30ea\u30aa\u304c\u3042\u308a\u307e\u305b\u3093', items =>
-          items.map(s =>
+        const d = await fetchJson('/lh/api/scenarios');
+        const items = d.data || d.scenarios || [];
+        showList('scenarioList', items, 5, '\u30b7\u30ca\u30ea\u30aa\u304c\u3042\u308a\u307e\u305b\u3093', list =>
+          list.map(s =>
             '<tr onclick="showDetail(\\\''+s.id+'\\\')" style="cursor:pointer"><td>'+esc(s.name)+'</td>' +
-            '<td><span class="badge badge-active">'+s.trigger_type+'</span></td>' +
-            '<td><span class="badge '+(s.status==='active'?'badge-active':'badge-admin')+'">'+s.status+'</span></td>' +
-            '<td>'+s.created_at.substring(0,10)+'</td>' +
+            '<td><span class="badge badge-active">'+(s.triggerType||s.trigger_type)+'</span></td>' +
+            '<td><span class="badge '+((s.isActive!==undefined?s.isActive:s.status==='active')?'badge-active':'badge-admin')+'">'+(s.isActive!==undefined?(s.isActive?'active':'inactive'):s.status)+'</span></td>' +
+            '<td>'+(s.createdAt||s.created_at||'').substring(0,10)+'</td>' +
             '<td><button class="btn btn-primary" onclick="event.stopPropagation();showDetail(\\\''+s.id+'\\\')" style="padding:4px 12px;font-size:12px">\u8a73\u7d30</button></td></tr>'
           ).join('')
         );

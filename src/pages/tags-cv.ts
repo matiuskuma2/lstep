@@ -21,10 +21,11 @@ export function getTagsPageHtml(): string {
     <script>
     async function loadTags() {
       try {
-        const d = await fetchJson('/api/tags');
-        showListDiv('tagList', d.tags || [], '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
+        const d = await fetchJson('/lh/api/tags');
+        const tags = d.data || d.tags || [];
+        showListDiv('tagList', tags, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
           items.map(t =>
-            '<div style="background:'+t.color+'22;border:1px solid '+t.color+';color:'+t.color+';padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500">'+esc(t.name)+'</div>'
+            '<div style="background:'+(t.color||'#3B82F6')+'22;border:1px solid '+(t.color||'#3B82F6')+';color:'+(t.color||'#3B82F6')+';padding:6px 14px;border-radius:20px;font-size:13px;font-weight:500">'+esc(t.name)+'</div>'
           ).join('')
         );
       } catch(e) { showErrorDiv('tagList', e.message); }
