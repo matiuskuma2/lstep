@@ -53,9 +53,64 @@ export interface Env {
 const app = new Hono<{ Bindings: Env }>();
 app.use('*', cors({ origin: '*' }));
 
-// LINE Harness Hono routes are NOT mounted here.
-// We use approach B: DB adapters only, own handlers in the catch-all below.
-// LINE Harness routes have unresolved imports (../index.js) and would break the build.
+// Webhook: direct Hono route (not in catch-all, to avoid body consumption issues)
+app.post('/webhook', async (c) => {
+  const env = c.env;
+  const body = await c.req.text();
+  const signature = c.req.header('x-line-signature') || '';
+
+  // Debug log
+  try {
+    await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'WEBHOOK: sig=' + signature.substring(0, 10) + ' body_len=' + body.length, 'webhook_debug').run();
+  } catch {}
+
+  const accounts = await getLineAccountsList(env.DB);
+  if (accounts.length === 0) return c.json({ status: 'ok' });
+
+  let matchedAccount: any = null;
+  for (const account of accounts) {
+    if (account.is_active) {
+      const valid = await verifySignature(account.channel_secret, body, signature);
+      try {
+        await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'SIG: ' + account.name + ' valid=' + valid, 'webhook_debug').run();
+      } catch {}
+      if (valid) { matchedAccount = account; break; }
+    }
+  }
+
+  if (!matchedAccount) return c.json({ status: 'ok' }); // Return 200 even on sig failure (LINE expects 200)
+
+  let parsed: any;
+  try { parsed = JSON.parse(body); } catch { return c.json({ status: 'ok' }); }
+
+  for (const event of (parsed.events || [])) {
+    try {
+      if (event.type === 'follow') {
+        const lineUserId = event.source?.userId;
+        if (lineUserId) {
+          const existing = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first();
+          if (existing) {
+            await env.DB.prepare("UPDATE friends SET is_following = 1, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
+          } else {
+            const id = crypto.randomUUID();
+            const now = new Date().toISOString();
+            const tenant = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
+            await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, lineUserId, lineUserId, 'active', 1, 0, now, now).run();
+          }
+        }
+      } else if (event.type === 'unfollow') {
+        const lineUserId = event.source?.userId;
+        if (lineUserId) {
+          await env.DB.prepare("UPDATE friends SET is_following = 0, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
+        }
+      }
+    } catch (e) { console.error('Webhook error:', e); }
+  }
+
+  return c.json({ status: 'ok' });
+});
+
+app.get('/webhook', (c) => c.json({ status: 'ok', message: 'Webhook endpoint active. Use POST for LINE events.' }));
 
 // Fallback: existing lchatAI routes
 app.all('*', async (c) => {
@@ -72,11 +127,7 @@ app.all('*', async (c) => {
   let response: Response;
 
   try {
-      if (url.pathname === '/webhook' && request.method === 'POST') {
-        response = await handleWebhook(request, env);
-      } else if (url.pathname === '/webhook' && request.method === 'GET') {
-        response = Response.json({ status: 'ok', message: 'Webhook endpoint active. Use POST for LINE events.' });
-      } else if (url.pathname === '/api/debug/db' && request.method === 'GET') {
+      if (url.pathname === '/api/debug/db' && request.method === 'GET') {
         // Temporary debug endpoint - shows raw DB state
         const friends = await env.DB.prepare('SELECT id, tenant_id, display_name, line_user_id, status, is_following FROM friends ORDER BY created_at DESC LIMIT 10').all();
         const accounts = await env.DB.prepare('SELECT id, channel_id, name, is_active FROM line_accounts ORDER BY created_at DESC LIMIT 10').all();
