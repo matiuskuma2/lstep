@@ -296,10 +296,11 @@ async function handleFriends(request: Request, env: Env): Promise<Response> {
     return Response.json({ status: 'ok', friends });
   }
   if (request.method === 'POST') {
-    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
     let body: { display_name?: string; line_user_id?: string; ref_code?: string };
     try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
-    try { const f = await adapter.create(tenantId, { display_name: body.display_name || '', line_user_id: body.line_user_id, ref_code: body.ref_code }); return Response.json({ status: 'ok', friend: f }, { status: 201 }); }
+    const effectiveTenantId = tenantId || (body as any).tenant_id;
+    if (!effectiveTenantId) return Response.json({ status: 'error', message: 'Tenant required (specify tenant_id for super_admin)' }, { status: 400 });
+    try { const f = await adapter.create(effectiveTenantId, { display_name: body.display_name || '', line_user_id: body.line_user_id, ref_code: body.ref_code }); return Response.json({ status: 'ok', friend: f }, { status: 201 }); }
     catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
@@ -318,10 +319,11 @@ async function handleBroadcasts(request: Request, env: Env): Promise<Response> {
     return Response.json({ status: 'ok', broadcasts });
   }
   if (request.method === 'POST') {
-    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
     let body: { name?: string; message_content?: string; message_type?: string; target_tag_id?: string; scheduled_at?: string };
     try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
-    try { const b = await adapter.create(tenantId, { name: body.name || '', message_content: body.message_content || '', message_type: body.message_type, target_tag_id: body.target_tag_id, scheduled_at: body.scheduled_at }); return Response.json({ status: 'ok', broadcast: b }, { status: 201 }); }
+    const effectiveTenantId = tenantId || (body as any).tenant_id;
+    if (!effectiveTenantId) return Response.json({ status: 'error', message: 'Tenant required (specify tenant_id for super_admin)' }, { status: 400 });
+    try { const b = await adapter.create(effectiveTenantId, { name: body.name || '', message_content: body.message_content || '', message_type: body.message_type, target_tag_id: body.target_tag_id, scheduled_at: body.scheduled_at }); return Response.json({ status: 'ok', broadcast: b }, { status: 201 }); }
     catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
@@ -340,10 +342,11 @@ async function handleForms(request: Request, env: Env): Promise<Response> {
     return Response.json({ status: 'ok', forms });
   }
   if (request.method === 'POST') {
-    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
     let body: { name?: string; description?: string; fields?: Array<{label:string;type:string;required?:boolean}> };
     try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
-    try { const f = await adapter.create(tenantId, { name: body.name || '', description: body.description, fields: body.fields }); return Response.json({ status: 'ok', form: f }, { status: 201 }); }
+    const effectiveTenantId = tenantId || (body as any).tenant_id;
+    if (!effectiveTenantId) return Response.json({ status: 'error', message: 'Tenant required (specify tenant_id for super_admin)' }, { status: 400 });
+    try { const f = await adapter.create(effectiveTenantId, { name: body.name || '', description: body.description, fields: body.fields }); return Response.json({ status: 'ok', form: f }, { status: 201 }); }
     catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
@@ -362,10 +365,11 @@ async function handleTags(request: Request, env: Env): Promise<Response> {
     return Response.json({ status: 'ok', tags });
   }
   if (request.method === 'POST') {
-    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
     let body: { name?: string; color?: string; description?: string };
     try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
-    try { const tag = await adapter.create(tenantId, { name: body.name || '', color: body.color, description: body.description }); return Response.json({ status: 'ok', tag }, { status: 201 }); }
+    const effectiveTenantId = tenantId || (body as any).tenant_id;
+    if (!effectiveTenantId) return Response.json({ status: 'error', message: 'Tenant required (specify tenant_id for super_admin)' }, { status: 400 });
+    try { const tag = await adapter.create(effectiveTenantId, { name: body.name || '', color: body.color, description: body.description }); return Response.json({ status: 'ok', tag }, { status: 201 }); }
     catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
@@ -384,10 +388,11 @@ async function handleConversionPoints(request: Request, env: Env): Promise<Respo
     return Response.json({ status: 'ok', conversion_points: cvs });
   }
   if (request.method === 'POST') {
-    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
     let body: { name?: string; code?: string; scope?: string; verification_method?: string; is_primary?: boolean; value_amount?: number; description?: string };
     try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
-    try { const cv = await adapter.create(tenantId, { name: body.name || '', code: body.code || '', scope: body.scope, verification_method: body.verification_method, is_primary: body.is_primary, value_amount: body.value_amount, description: body.description }); return Response.json({ status: 'ok', conversion_point: cv }, { status: 201 }); }
+    const effectiveTenantId = tenantId || (body as any).tenant_id;
+    if (!effectiveTenantId) return Response.json({ status: 'error', message: 'Tenant required (specify tenant_id for super_admin)' }, { status: 400 });
+    try { const cv = await adapter.create(effectiveTenantId, { name: body.name || '', code: body.code || '', scope: body.scope, verification_method: body.verification_method, is_primary: body.is_primary, value_amount: body.value_amount, description: body.description }); return Response.json({ status: 'ok', conversion_point: cv }, { status: 201 }); }
     catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
@@ -410,10 +415,11 @@ async function handleBots(request: Request, url: URL, env: Env): Promise<Respons
   }
   // POST /api/bots
   if (url.pathname === '/api/bots' && request.method === 'POST') {
-    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
     let body: any;
     try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
-    try { const bot = await adapter.create(tenantId, body); return Response.json({ status: 'ok', bot }, { status: 201 }); }
+    const effectiveTenantId = tenantId || (body as any).tenant_id;
+    if (!effectiveTenantId) return Response.json({ status: 'error', message: 'Tenant required (specify tenant_id for super_admin)' }, { status: 400 });
+    try { const bot = await adapter.create(effectiveTenantId, body); return Response.json({ status: 'ok', bot }, { status: 201 }); }
     catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
   }
 
@@ -461,10 +467,11 @@ async function handleKnowledge(request: Request, env: Env): Promise<Response> {
     return Response.json({ status: 'ok', knowledge: items });
   }
   if (request.method === 'POST') {
-    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
     let body: any;
     try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
-    try { const item = await adapter.create(tenantId, body); return Response.json({ status: 'ok', knowledge_item: item }, { status: 201 }); }
+    const effectiveTenantId = tenantId || (body as any).tenant_id;
+    if (!effectiveTenantId) return Response.json({ status: 'error', message: 'Tenant required (specify tenant_id for super_admin)' }, { status: 400 });
+    try { const item = await adapter.create(effectiveTenantId, body); return Response.json({ status: 'ok', knowledge_item: item }, { status: 201 }); }
     catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
   }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
@@ -485,10 +492,11 @@ async function handleScenarios(request: Request, url: URL, env: Env): Promise<Re
   }
   // POST /api/scenarios
   if (url.pathname === '/api/scenarios' && request.method === 'POST') {
-    if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
     let body: CreateScenarioInput;
     try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
-    try { const s = await adapter.create(tenantId, body); return Response.json({ status: 'ok', scenario: s }, { status: 201 }); }
+    const effectiveTenantId = tenantId || (body as any).tenant_id;
+    if (!effectiveTenantId) return Response.json({ status: 'error', message: 'Tenant required (specify tenant_id for super_admin)' }, { status: 400 });
+    try { const s = await adapter.create(effectiveTenantId, body); return Response.json({ status: 'ok', scenario: s }, { status: 201 }); }
     catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
   }
   // /api/scenarios/:id or /api/scenarios/:id/steps
