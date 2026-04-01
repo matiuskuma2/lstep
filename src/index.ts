@@ -279,7 +279,8 @@ app.all('*', async (c) => {
         const enrollments = await env.DB.prepare('SELECT id, friend_id, scenario_id, current_step_order, status, next_delivery_at FROM friend_scenarios ORDER BY started_at DESC LIMIT 10').all();
         const messagesLog = await env.DB.prepare('SELECT id, friend_id, direction, message_type, content, scenario_step_id, created_at FROM messages_log ORDER BY created_at DESC LIMIT 10').all();
         const webhookLogs = await env.DB.prepare("SELECT id, request_message, intent, created_at FROM ai_execution_logs WHERE intent = 'webhook_debug' ORDER BY created_at DESC LIMIT 10").all();
-        response = Response.json({ friends: friends.results, line_accounts: accounts.results, tenants: tenants.results, scenarios: scenarios.results, scenario_steps: scenarioSteps.results, enrollments: enrollments.results, messages_log: messagesLog.results, webhook_logs: webhookLogs.results });
+        const cronLogs = await env.DB.prepare("SELECT id, request_message, intent, created_at FROM ai_execution_logs WHERE intent = 'cron_debug' ORDER BY created_at DESC LIMIT 10").all();
+        response = Response.json({ friends: friends.results, line_accounts: accounts.results, tenants: tenants.results, scenarios: scenarios.results, scenario_steps: scenarioSteps.results, enrollments: enrollments.results, messages_log: messagesLog.results, webhook_logs: webhookLogs.results, cron_logs: cronLogs.results });
       } else if (url.pathname === '/health') {
         response = Response.json({ status: 'ok', environment: env.ENVIRONMENT, timestamp: new Date().toISOString() });
       } else if (url.pathname === '/') {
@@ -378,75 +379,60 @@ async function scheduled(
   env: Env,
   _ctx: ExecutionContext,
 ): Promise<void> {
-  // Step delivery: find friend_scenarios where next_delivery_at <= now and status = active
+  // Log cron execution
+  try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'CRON_START', 'cron_debug').run(); } catch {}
+
   try {
     const now = new Date().toISOString();
     const due = await env.DB.prepare(
       "SELECT fs.id, fs.friend_id, fs.scenario_id, fs.current_step_order FROM friend_scenarios fs WHERE fs.status = 'active' AND fs.next_delivery_at <= ? LIMIT 50"
     ).bind(now).all<{id: string; friend_id: string; scenario_id: string; current_step_order: number}>();
 
+    const dueCount = (due.results || []).length;
+    try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'CRON_DUE: count=' + dueCount, 'cron_debug').run(); } catch {}
+
     for (const enrollment of (due.results || [])) {
       try {
-        // Get next step
         const nextOrder = enrollment.current_step_order + 1;
         const step = await env.DB.prepare(
-          'SELECT id, message_type, message_content, delay_minutes FROM scenario_steps WHERE scenario_id = ? AND step_order = ? LIMIT 1'
-        ).bind(enrollment.scenario_id, nextOrder).first<{id: string; message_type: string; message_content: string; delay_minutes: number}>();
+          'SELECT id, message_type, message_content FROM scenario_steps WHERE scenario_id = ? AND step_order = ? LIMIT 1'
+        ).bind(enrollment.scenario_id, nextOrder).first<{id: string; message_type: string; message_content: string}>();
 
         if (!step) {
-          // No more steps — mark completed
           await env.DB.prepare("UPDATE friend_scenarios SET status = 'completed', updated_at = datetime('now') WHERE id = ?").bind(enrollment.id).run();
           continue;
         }
 
-        // Get friend's line_user_id and account token
-        const friend = await env.DB.prepare('SELECT line_user_id, tenant_id FROM friends WHERE id = ?').bind(enrollment.friend_id).first<{line_user_id: string; tenant_id: string}>();
+        const friend = await env.DB.prepare('SELECT line_user_id FROM friends WHERE id = ?').bind(enrollment.friend_id).first<{line_user_id: string}>();
         if (!friend?.line_user_id) continue;
 
-        // Get LINE account token (first active account)
         const account = await env.DB.prepare('SELECT channel_access_token FROM line_accounts WHERE is_active = 1 LIMIT 1').first<{channel_access_token: string}>();
         if (!account) continue;
 
-        // Send message via LINE Messaging API
         const pushRes = await fetch('https://api.line.me/v2/bot/message/push', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + account.channel_access_token,
-          },
-          body: JSON.stringify({
-            to: friend.line_user_id,
-            messages: [{ type: step.message_type === 'text' ? 'text' : 'text', text: step.message_content }],
-          }),
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + account.channel_access_token },
+          body: JSON.stringify({ to: friend.line_user_id, messages: [{ type: 'text', text: step.message_content }] }),
         });
 
-        // Log message
-        await env.DB.prepare(
-          "INSERT INTO messages_log (id, friend_id, direction, message_type, content, scenario_step_id, delivery_type, created_at) VALUES (?,?,?,?,?,?,?,datetime('now'))"
-        ).bind(crypto.randomUUID(), enrollment.friend_id, 'outgoing', step.message_type, step.message_content, step.id, 'push').run();
+        try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'CRON_SENT: step=' + nextOrder + ' status=' + pushRes.status + ' msg=' + step.message_content.substring(0, 20), 'cron_debug').run(); } catch {}
 
-        // Get next step for scheduling
-        const followingStep = await env.DB.prepare(
-          'SELECT delay_minutes FROM scenario_steps WHERE scenario_id = ? AND step_order = ? LIMIT 1'
-        ).bind(enrollment.scenario_id, nextOrder + 1).first<{delay_minutes: number}>();
+        await env.DB.prepare("INSERT INTO messages_log (id, friend_id, direction, message_type, content, scenario_step_id, delivery_type, created_at) VALUES (?,?,?,?,?,?,?,datetime('now'))").bind(crypto.randomUUID(), enrollment.friend_id, 'outgoing', 'text', step.message_content, step.id, 'push').run();
 
-        if (followingStep) {
-          const nextDelivery = new Date(Date.now() + (followingStep.delay_minutes || 0) * 60 * 1000).toISOString();
-          await env.DB.prepare(
-            "UPDATE friend_scenarios SET current_step_order = ?, next_delivery_at = ?, updated_at = datetime('now') WHERE id = ?"
-          ).bind(nextOrder, nextDelivery, enrollment.id).run();
+        // Check if there's a next step
+        const hasMore = await env.DB.prepare('SELECT id FROM scenario_steps WHERE scenario_id = ? AND step_order = ? LIMIT 1').bind(enrollment.scenario_id, nextOrder + 1).first();
+        if (hasMore) {
+          const nextDelivery = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 min default
+          await env.DB.prepare("UPDATE friend_scenarios SET current_step_order = ?, next_delivery_at = ?, updated_at = datetime('now') WHERE id = ?").bind(nextOrder, nextDelivery, enrollment.id).run();
         } else {
-          // Last step delivered — mark completed
-          await env.DB.prepare(
-            "UPDATE friend_scenarios SET current_step_order = ?, status = 'completed', updated_at = datetime('now') WHERE id = ?"
-          ).bind(nextOrder, enrollment.id).run();
+          await env.DB.prepare("UPDATE friend_scenarios SET current_step_order = ?, status = 'completed', updated_at = datetime('now') WHERE id = ?").bind(nextOrder, enrollment.id).run();
         }
-      } catch (e) {
-        console.error('Step delivery error:', e);
+      } catch (e: any) {
+        try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'CRON_ERR: ' + (e.message || String(e)), 'cron_debug').run(); } catch {}
       }
     }
-  } catch (e) {
-    console.error('Scheduled handler error:', e);
+  } catch (e: any) {
+    try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'CRON_FATAL: ' + (e.message || String(e)), 'cron_debug').run(); } catch {}
   }
 }
 
