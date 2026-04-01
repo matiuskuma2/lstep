@@ -67,7 +67,7 @@ export function getScenariosPageHtml(): string {
     }
     async function createScenario() {
       const er=document.getElementById('createError'),su=document.getElementById('createSuccess');
-      er.style.display='none';su.style.display='none';
+      if(!requireTenantForCreate()){er.textContent='\u30c6\u30ca\u30f3\u30c8\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044';er.style.display='block';return;}er.style.display='none';su.style.display='none';
       const name=document.getElementById('scenarioName').value;
       const trigger=document.getElementById('triggerType').value;
       const desc=document.getElementById('scenarioDesc').value;
@@ -100,7 +100,7 @@ export function getScenariosPageHtml(): string {
     }
     async function addStep() {
       const er=document.getElementById('stepError'),su=document.getElementById('stepSuccess');
-      er.style.display='none';su.style.display='none';
+      if(!requireTenantForCreate()){er.textContent='\u30c6\u30ca\u30f3\u30c8\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044';er.style.display='block';return;}er.style.display='none';su.style.display='none';
       const content=document.getElementById('stepContent').value;
       if(!content){er.textContent='\u5185\u5bb9\u306f\u5fc5\u9808';er.style.display='block';return;}
       try {

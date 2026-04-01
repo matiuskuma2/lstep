@@ -31,7 +31,7 @@ export function getTagsPageHtml(): string {
     }
     async function createTag() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');
-      er.style.display='none';su.style.display='none';
+      if(!requireTenantForCreate()){er.textContent='\u30c6\u30ca\u30f3\u30c8\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044';er.style.display='block';return;}er.style.display='none';su.style.display='none';
       const name=document.getElementById('tagName').value;
       if(!name){er.textContent='\u30bf\u30b0\u540d\u5fc5\u9808';er.style.display='block';return;}
       const r=await fetch('/api/tags',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,color:document.getElementById('tagColor').value,description:document.getElementById('tagDesc').value||undefined,tenant_id:getSelectedTenantId()||undefined})});
@@ -79,7 +79,7 @@ export function getConversionsPageHtml(): string {
     }
     async function createCV() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');
-      er.style.display='none';su.style.display='none';
+      if(!requireTenantForCreate()){er.textContent='\u30c6\u30ca\u30f3\u30c8\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044';er.style.display='block';return;}er.style.display='none';su.style.display='none';
       const name=document.getElementById('cvName').value,code=document.getElementById('cvCode').value;
       if(!name||!code){er.textContent='CV\u540d\u3068\u30b3\u30fc\u30c9\u306f\u5fc5\u9808';er.style.display='block';return;}
       const r=await fetch('/api/conversion-points',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,code,scope:document.getElementById('cvScope').value,verification_method:document.getElementById('cvMethod').value,tenant_id:getSelectedTenantId()||undefined})});

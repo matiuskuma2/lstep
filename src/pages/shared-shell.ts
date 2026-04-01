@@ -106,12 +106,23 @@ if (user) {
       fetch('/api/admin/tenants', { headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token } })
         .then(r => r.json()).then(d => {
           const sel = document.getElementById('tenantSelect');
-          (d.tenants || []).forEach(t => { const o = document.createElement('option'); o.value = t.id; o.textContent = t.name; sel.appendChild(o); });
+          const tenants = d.tenants || [];
+          tenants.forEach(t => { const o = document.createElement('option'); o.value = t.id; o.textContent = t.name; sel.appendChild(o); });
+          if (tenants.length === 1) { sel.value = tenants[0].id; }
         }).catch(() => {});
     }
   }
 }
-function getSelectedTenantId() { const sel = document.getElementById('tenantSelect'); return sel ? sel.value : ''; }
+function getSelectedTenantId() { const sel = document.getElementById('tenantSelect'); return sel ? sel.value : (user && user.tenant_id ? user.tenant_id : ''); }
+function requireTenantForCreate() {
+  const tid = getSelectedTenantId();
+  if (!tid && user && user.role === 'super_admin') {
+    const bar = document.getElementById('tenantBar');
+    if (bar) { bar.style.background = '#ffcdd2'; setTimeout(() => { bar.style.background = '#fff3e0'; }, 2000); }
+    return false;
+  }
+  return true;
+}
 function authHeaders() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }; }
 function logout() { localStorage.removeItem('lchatai_token'); localStorage.removeItem('lchatai_user'); window.location.href = '/login'; }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }

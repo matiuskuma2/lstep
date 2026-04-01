@@ -32,7 +32,7 @@ export function getFriendsPageHtml(): string {
       } catch(e) { showError('fList', 5, e.message); }
     }
     async function addFriend() {
-      const er=document.getElementById('cErr'),su=document.getElementById('cSuc');er.style.display='none';su.style.display='none';
+      const er=document.getElementById('cErr'),su=document.getElementById('cSuc');if(!requireTenantForCreate()){er.textContent='\u30c6\u30ca\u30f3\u30c8\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044';er.style.display='block';return;}er.style.display='none';su.style.display='none';
       const name=document.getElementById('fName').value;
       if(!name){er.textContent='\u8868\u793a\u540d\u5fc5\u9808';er.style.display='block';return;}
       const r=await fetch('/api/friends',{method:'POST',headers:authHeaders(),body:JSON.stringify({display_name:name,ref_code:document.getElementById('fRef').value||undefined,tenant_id:getSelectedTenantId()||undefined})});
@@ -75,7 +75,7 @@ export function getBroadcastsPageHtml(): string {
       } catch(e) { showError('bList', 4, e.message); }
     }
     async function createBroadcast() {
-      const er=document.getElementById('cErr'),su=document.getElementById('cSuc');er.style.display='none';su.style.display='none';
+      const er=document.getElementById('cErr'),su=document.getElementById('cSuc');if(!requireTenantForCreate()){er.textContent='\u30c6\u30ca\u30f3\u30c8\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044';er.style.display='block';return;}er.style.display='none';su.style.display='none';
       const name=document.getElementById('bName').value,content=document.getElementById('bContent').value;
       if(!name||!content){er.textContent='\u914d\u4fe1\u540d\u3068\u5185\u5bb9\u5fc5\u9808';er.style.display='block';return;}
       const r=await fetch('/api/broadcasts',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,message_content:content,tenant_id:getSelectedTenantId()||undefined})});
@@ -120,7 +120,7 @@ export function getFormsPageHtml(): string {
       } catch(e) { showError('formList', 4, e.message); }
     }
     async function createForm() {
-      const er=document.getElementById('cErr'),su=document.getElementById('cSuc');er.style.display='none';su.style.display='none';
+      const er=document.getElementById('cErr'),su=document.getElementById('cSuc');if(!requireTenantForCreate()){er.textContent='\u30c6\u30ca\u30f3\u30c8\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044';er.style.display='block';return;}er.style.display='none';su.style.display='none';
       const name=document.getElementById('formName').value;
       if(!name){er.textContent='\u30d5\u30a9\u30fc\u30e0\u540d\u5fc5\u9808';er.style.display='block';return;}
       const r=await fetch('/api/forms',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,description:document.getElementById('formDesc').value||undefined,tenant_id:getSelectedTenantId()||undefined})});

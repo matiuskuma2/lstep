@@ -50,7 +50,7 @@ export function getBotsPageHtml(): string {
     }
     async function createBot() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');
-      er.style.display='none';su.style.display='none';
+      if(!requireTenantForCreate()){er.textContent='\u30c6\u30ca\u30f3\u30c8\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044';er.style.display='block';return;}er.style.display='none';su.style.display='none';
       const name=document.getElementById('botName').value;
       const prompt=document.getElementById('botPrompt').value;
       if(!name){er.textContent='Bot\u540d\u306f\u5fc5\u9808';er.style.display='block';return;}
@@ -151,7 +151,7 @@ export function getKnowledgePageHtml(): string {
     }
     async function createKnowledge() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');
-      er.style.display='none';su.style.display='none';
+      if(!requireTenantForCreate()){er.textContent='\u30c6\u30ca\u30f3\u30c8\u3092\u9078\u629e\u3057\u3066\u304f\u3060\u3055\u3044';er.style.display='block';return;}er.style.display='none';su.style.display='none';
       const title=document.getElementById('kTitle').value;
       const content=document.getElementById('kContent').value;
       if(!title||!content){er.textContent='\u30bf\u30a4\u30c8\u30eb\u3068\u5185\u5bb9\u306f\u5fc5\u9808';er.style.display='block';return;}
