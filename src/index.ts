@@ -83,28 +83,42 @@ app.post('/webhook', async (c) => {
   let parsed: any;
   try { parsed = JSON.parse(body); } catch { return c.json({ status: 'ok' }); }
 
-  for (const event of (parsed.events || [])) {
+  const events = parsed.events || [];
+  // Debug: log parsed events
+  try {
+    await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'EVENTS: count=' + events.length + ' types=' + events.map((e: any) => e.type).join(',') + ' body=' + body.substring(0, 200), 'webhook_debug').run();
+  } catch {}
+
+  for (const event of events) {
     try {
-      if (event.type === 'follow') {
-        const lineUserId = event.source?.userId;
-        if (lineUserId) {
-          const existing = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first();
-          if (existing) {
-            await env.DB.prepare("UPDATE friends SET is_following = 1, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
-          } else {
-            const id = crypto.randomUUID();
-            const now = new Date().toISOString();
-            const tenant = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
-            await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, lineUserId, lineUserId, 'active', 1, 0, now, now).run();
-          }
+      const lineUserId = event.source?.userId;
+      // Debug: log each event
+      try {
+        await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'EVENT: type=' + event.type + ' userId=' + (lineUserId || 'none') + ' source=' + JSON.stringify(event.source || {}), 'webhook_debug').run();
+      } catch {}
+
+      if (event.type === 'follow' && lineUserId) {
+        const existing = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first();
+        if (existing) {
+          await env.DB.prepare("UPDATE friends SET is_following = 1, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
+        } else {
+          const id = crypto.randomUUID();
+          const now = new Date().toISOString();
+          const tenant = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
+          await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, lineUserId, lineUserId, 'active', 1, 0, now, now).run();
         }
-      } else if (event.type === 'unfollow') {
-        const lineUserId = event.source?.userId;
-        if (lineUserId) {
-          await env.DB.prepare("UPDATE friends SET is_following = 0, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
-        }
+        // Debug: confirm save
+        try {
+          await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'SAVED: userId=' + lineUserId + ' existing=' + !!existing, 'webhook_debug').run();
+        } catch {}
+      } else if (event.type === 'unfollow' && lineUserId) {
+        await env.DB.prepare("UPDATE friends SET is_following = 0, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
       }
-    } catch (e) { console.error('Webhook error:', e); }
+    } catch (e: any) {
+      try {
+        await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'ERROR: ' + (e.message || String(e)), 'webhook_debug').run();
+      } catch {}
+    }
   }
 
   return c.json({ status: 'ok' });
