@@ -875,6 +875,15 @@ async function handleScenarios(request: Request, url: URL, env: Env): Promise<Re
     const updated = await adapter.getById(scenarioId);
     return Response.json({ status: 'ok', scenario: updated });
   }
+  // DELETE /api/scenarios/:id
+  if (request.method === 'DELETE') {
+    try {
+      await env.DB.prepare('DELETE FROM scenario_steps WHERE scenario_id = ?').bind(scenarioId).run();
+      await env.DB.prepare('DELETE FROM friend_scenarios WHERE scenario_id = ?').bind(scenarioId).run();
+      await env.DB.prepare('DELETE FROM scenarios WHERE id = ?').bind(scenarioId).run();
+      return Response.json({ status: 'ok' });
+    } catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
+  }
   return Response.json({ error: 'method not allowed' }, { status: 405 });
 }
 
