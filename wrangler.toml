@@ -32,6 +32,9 @@ name = "lstep-ai-api-stg"
 [env.staging.vars]
 ENVIRONMENT = "staging"
 
+[env.staging.triggers]
+crons = ["*/5 * * * *"]
+
 [[env.staging.d1_databases]]
 binding = "DB"
 database_name = "lstep-db"
