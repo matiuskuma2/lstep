@@ -154,36 +154,23 @@ app.post('/webhook', async (c) => {
       } catch {}
 
       if (event.type === 'follow' && lineUserId) {
-        // Step 1: Get display name from LINE Profile API
-        let displayName = lineUserId;
-        try {
-          const profileRes = await fetch('https://api.line.me/v2/bot/profile/' + lineUserId, {
-            headers: { 'Authorization': 'Bearer ' + matchedAccount.channel_access_token }
-          });
-          if (profileRes.ok) {
-            const profile = await profileRes.json() as any;
-            displayName = profile.displayName || lineUserId;
-          }
-        } catch {}
-
-        // Step 2: Upsert friend (use only columns that definitely exist)
+        // Step 2: Save friend FIRST (no external API calls, fast)
         const existing = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first();
         if (existing) {
-          await env.DB.prepare("UPDATE friends SET display_name = ?, is_following = 1, updated_at = datetime('now') WHERE line_user_id = ?").bind(displayName, lineUserId).run();
+          await env.DB.prepare("UPDATE friends SET is_following = 1, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
         } else {
           const id = crypto.randomUUID();
           const now = new Date().toISOString();
           const tenant = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
-          await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, displayName, lineUserId, 'active', 1, 0, now, now).run();
+          await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, lineUserId, lineUserId, 'active', 1, 0, now, now).run();
         }
 
-        // Step 3: Enrollment FIRST, then push (avoid Worker timeout before enrollment)
+        // Step 3: Enrollment + push
         try {
           const scenario = await env.DB.prepare("SELECT s.id FROM scenarios s WHERE s.trigger_type = 'friend_add' AND s.status IN ('active','draft') AND EXISTS (SELECT 1 FROM scenario_steps WHERE scenario_id = s.id) LIMIT 1").first<{id: string}>();
           if (scenario) {
             const friend = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first<{id: string}>();
             if (friend) {
-              // Enrollment FIRST
               await env.DB.prepare('DELETE FROM friend_scenarios WHERE friend_id = ?').bind(friend.id).run();
               const hasStep2 = await env.DB.prepare('SELECT id FROM scenario_steps WHERE scenario_id = ? AND step_order = 2 LIMIT 1').bind(scenario.id).first();
               const now = new Date().toISOString();
@@ -192,8 +179,6 @@ app.post('/webhook', async (c) => {
                 crypto.randomUUID(), friend.id, scenario.id, 1, nextDelivery ? 'active' : 'completed', now, nextDelivery, now
               ).run();
             }
-
-            // Push LAST (external API call that may be slow)
             const firstStep = await env.DB.prepare('SELECT message_content FROM scenario_steps WHERE scenario_id = ? AND step_order = 1 LIMIT 1').bind(scenario.id).first<{message_content: string}>();
             if (firstStep) {
               fetch('https://api.line.me/v2/bot/message/push', {
@@ -203,9 +188,16 @@ app.post('/webhook', async (c) => {
               }).catch(() => {});
             }
           }
-        } catch (err: any) {
-          try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'S3_ERR: ' + (err.message || String(err)), 'webhook_debug').run(); } catch {}
-        }
+        } catch {}
+
+        // Profile update (fire-and-forget, non-blocking)
+        fetch('https://api.line.me/v2/bot/profile/' + lineUserId, {
+          headers: { 'Authorization': 'Bearer ' + matchedAccount.channel_access_token }
+        }).then(r => r.ok ? r.json() : null).then(p => {
+          if (p && p.displayName) {
+            env.DB.prepare("UPDATE friends SET display_name = ? WHERE line_user_id = ?").bind(p.displayName, lineUserId).run();
+          }
+        }).catch(() => {});
 
         try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'SAVED: name=' + displayName + ' existing=' + !!existing, 'webhook_debug').run(); } catch {}
 
