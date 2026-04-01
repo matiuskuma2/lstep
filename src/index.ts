@@ -73,6 +73,8 @@ export default {
         response = await handleConversionPoints(request, env);
       } else if (url.pathname === '/api/bots' || url.pathname.startsWith('/api/bots/')) {
         response = await handleBots(request, url, env);
+      } else if (url.pathname.startsWith('/api/knowledge/') && url.pathname !== '/api/knowledge') {
+        response = await handleKnowledgeById(request, url, env);
       } else if (url.pathname === '/api/knowledge') {
         response = await handleKnowledge(request, env);
       } else if (url.pathname === '/api/scenarios' || url.pathname.startsWith('/api/scenarios/')) {
@@ -454,6 +456,31 @@ async function handleBots(request: Request, url: URL, env: Env): Promise<Respons
 }
 
 // --- Knowledge ---
+async function handleKnowledgeById(request: Request, url: URL, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+  const adapter = new KnowledgeAdapter(env.DB);
+  const knowledgeId = url.pathname.split('/')[3];
+  try {
+    if (request.method === 'PATCH') {
+      let body: { title?: string; content?: string; category?: string };
+      try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+      const item = await adapter.update(knowledgeId, body);
+      return Response.json({ status: 'ok', knowledge_item: item });
+    }
+    if (request.method === 'DELETE') {
+      await adapter.delete(knowledgeId);
+      return Response.json({ status: 'ok' });
+    }
+    return Response.json({ error: 'method not allowed' }, { status: 405 });
+  } catch (err: any) {
+    const status = err.message === 'Knowledge not found' ? 404 : 400;
+    return Response.json({ status: 'error', message: err.message }, { status });
+  }
+}
+
 async function handleKnowledge(request: Request, env: Env): Promise<Response> {
   if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
   const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);

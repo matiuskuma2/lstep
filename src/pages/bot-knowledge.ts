@@ -121,20 +121,20 @@ export function getKnowledgePageHtml(): string {
     </div>
     <div class="card">
       <table>
-        <thead><tr><th>\u30bf\u30a4\u30c8\u30eb</th><th>\u30ab\u30c6\u30b4\u30ea</th><th>\u5185\u5bb9</th><th>\u30b9\u30c6\u30fc\u30bf\u30b9</th><th>\u4f5c\u6210\u65e5</th></tr></thead>
-        <tbody id="kList"><tr><td colspan="5">\u8aad\u307f\u8fbc\u307f\u4e2d...</td></tr></tbody>
+        <thead><tr><th>\u30bf\u30a4\u30c8\u30eb</th><th>\u30ab\u30c6\u30b4\u30ea</th><th>\u5185\u5bb9</th><th>\u30b9\u30c6\u30fc\u30bf\u30b9</th><th>\u4f5c\u6210\u65e5</th><th>\u64cd\u4f5c</th></tr></thead>
+        <tbody id="kList"><tr><td colspan="6">\u8aad\u307f\u8fbc\u307f\u4e2d...</td></tr></tbody>
       </table>
     </div>
     <script>
     async function loadKnowledge() {
       try {
         const d = await fetchJson('/api/knowledge');
-        showList('kList', d.knowledge || [], 5, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
-          items.map(k =>
-            '<tr><td>'+esc(k.title)+'</td><td><span class="badge badge-active">'+k.category+'</span></td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(k.content.substring(0,80))+'</td><td><span class="badge badge-active">'+k.status+'</span></td><td>'+k.created_at.substring(0,10)+'</td></tr>'
+        showList('kList', d.knowledge || [], 6, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
+          items.filter(k => k.status !== 'deleted').map(k =>
+            '<tr><td>'+esc(k.title)+'</td><td><span class="badge badge-active">'+k.category+'</span></td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(k.content.substring(0,80))+'</td><td><span class="badge badge-active">'+k.status+'</span></td><td>'+k.created_at.substring(0,10)+'</td><td style="white-space:nowrap"><button class="btn" style="padding:2px 8px;font-size:11px;background:#e3f2fd;color:#1565c0;border:none;border-radius:4px;cursor:pointer;margin-right:4px" onclick="editKnowledge(\\''+k.id+'\\',\\''+esc(k.title).replace(/'/g,'')+'\\',\\''+k.category+'\\')">\\u7de8\\u96c6</button><button class="btn" style="padding:2px 8px;font-size:11px;background:#ffebee;color:#c62828;border:none;border-radius:4px;cursor:pointer" onclick="deleteKnowledge(\\''+k.id+'\\',\\''+esc(k.title).replace(/'/g,'')+'\\')">\\u524a\\u9664</button></td></tr>'
           ).join('')
         );
-      } catch(e) { showError('kList', 5, e.message); }
+      } catch(e) { showError('kList', 6, e.message); }
     }
     async function createKnowledge() {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');
@@ -148,6 +148,27 @@ export function getKnowledgePageHtml(): string {
         if(d.status==='ok'){su.textContent='\u4f5c\u6210\u3057\u307e\u3057\u305f';su.style.display='block';document.getElementById('kTitle').value='';document.getElementById('kContent').value='';loadKnowledge();}
         else{er.textContent=d.message||'\u4f5c\u6210\u5931\u6557';er.style.display='block';}
       }catch(e){er.textContent=e.message;er.style.display='block';}
+    }
+    async function editKnowledge(id, title, category) {
+      const newTitle = prompt('\u30bf\u30a4\u30c8\u30eb:', title);
+      if (newTitle === null) return;
+      const newContent = prompt('\u5185\u5bb9\u3092\u5165\u529b:');
+      if (newContent === null) return;
+      try {
+        const body = { title: newTitle };
+        if (newContent) body.content = newContent;
+        const r = await fetch('/api/knowledge/' + id, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(body) });
+        const d = await r.json();
+        if (d.status === 'ok') { loadKnowledge(); } else { alert(d.message || '\u66f4\u65b0\u5931\u6557'); }
+      } catch(e) { alert(e.message); }
+    }
+    async function deleteKnowledge(id, title) {
+      if (!confirm('\u300c' + title + '\u300d\u3092\u524a\u9664\u3057\u307e\u3059\u304b\uff1f')) return;
+      try {
+        const r = await fetch('/api/knowledge/' + id, { method: 'DELETE', headers: authHeaders() });
+        const d = await r.json();
+        if (d.status === 'ok') { loadKnowledge(); } else { alert(d.message || '\u524a\u9664\u5931\u6557'); }
+      } catch(e) { alert(e.message); }
     }
     loadKnowledge();
     </script>
