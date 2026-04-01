@@ -83,8 +83,8 @@ export function getScenariosPageHtml(): string {
     async function showDetail(id) {
       currentScenarioId = id;
       try {
-        const sr = await fetchJson('/lh/api/scenarios/' + id);
-        const str = await fetchJson('/lh/api/scenarios/' + id + '/steps');
+        const sr = await fetchJson('/api/scenarios/' + id);
+        const str = await fetchJson('/api/scenarios/' + id + '/steps');
         const s = sr.data || sr.scenario || sr;
         document.getElementById('detailTitle').textContent = s.name || id;
         document.getElementById('detailInfo').innerHTML = '<span class="badge badge-active">'+(s.triggerType||s.trigger_type||'-')+'</span> <span class="badge '+(s.isActive||s.status==='active'?'badge-active':'badge-admin')+'">'+(s.isActive!==undefined?(s.isActive?'active':'draft'):(s.status||'draft'))+'</span> <button class="btn" style="padding:2px 8px;font-size:11px;background:#ffebee;color:#c62828;border:none;border-radius:4px;cursor:pointer;margin-left:8px" onclick="deleteScenario()">削除</button>';
