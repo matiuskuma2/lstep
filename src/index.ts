@@ -1,3 +1,5 @@
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { generatePlan } from './ai/engine';
 import type { BotKnowledgeContext } from './ai/engine';
 import type { AiChatRequest } from './ai/types';
@@ -24,26 +26,103 @@ import { BotAdapter, KnowledgeAdapter } from './adapters/bot-knowledge';
 import { getBotsPageHtml, getKnowledgePageHtml } from './pages/bot-knowledge';
 import { getAiLogsPageHtml } from './pages/ai-logs';
 
+// LINE Harness OSS routes
+import { webhook } from './line-harness/routes/webhook.js';
+import { friends as lhFriends } from './line-harness/routes/friends.js';
+import { tags as lhTags } from './line-harness/routes/tags.js';
+import { scenarios as lhScenarios } from './line-harness/routes/scenarios.js';
+import { broadcasts as lhBroadcasts } from './line-harness/routes/broadcasts.js';
+import { users as lhUsers } from './line-harness/routes/users.js';
+import { lineAccounts } from './line-harness/routes/line-accounts.js';
+import { conversions as lhConversions } from './line-harness/routes/conversions.js';
+import { affiliates } from './line-harness/routes/affiliates.js';
+import { webhooks } from './line-harness/routes/webhooks.js';
+import { calendar } from './line-harness/routes/calendar.js';
+import { reminders } from './line-harness/routes/reminders.js';
+import { scoring } from './line-harness/routes/scoring.js';
+import { templates } from './line-harness/routes/templates.js';
+import { chats } from './line-harness/routes/chats.js';
+import { notifications } from './line-harness/routes/notifications.js';
+import { stripe } from './line-harness/routes/stripe.js';
+import { automations } from './line-harness/routes/automations.js';
+import { richMenus } from './line-harness/routes/rich-menus.js';
+import { trackedLinks as lhTrackedLinks } from './line-harness/routes/tracked-links.js';
+import { forms as lhForms } from './line-harness/routes/forms.js';
+import { adPlatforms } from './line-harness/routes/ad-platforms.js';
+import { staff } from './line-harness/routes/staff.js';
+import { images } from './line-harness/routes/images.js';
+import { liffRoutes } from './line-harness/routes/liff.js';
+// LINE Harness services
+import { processStepDeliveries } from './line-harness/services/step-delivery.js';
+import { processScheduledBroadcasts } from './line-harness/services/broadcast.js';
+import { processReminderDeliveries } from './line-harness/services/reminder-delivery.js';
+import { checkAccountHealth } from './line-harness/services/ban-monitor.js';
+import { refreshLineAccessTokens } from './line-harness/services/token-refresh.js';
+import { getLineAccounts } from './line-harness/db/index.js';
+import { LineClient } from './line-harness/line-sdk/index.js';
+
 export interface Env {
   DB: D1Database;
+  IMAGES?: R2Bucket;
   OPENAI_API_KEY?: string;
   ADMIN_JWT_SECRET?: string;
+  LINE_CHANNEL_SECRET?: string;
+  LINE_CHANNEL_ACCESS_TOKEN?: string;
+  API_KEY?: string;
+  LIFF_URL?: string;
+  LINE_CHANNEL_ID?: string;
+  LINE_LOGIN_CHANNEL_ID?: string;
+  LINE_LOGIN_CHANNEL_SECRET?: string;
+  WORKER_URL?: string;
   ENVIRONMENT: string;
 }
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const corsHeaders = {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    };
-    if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+// --- Hono app with LINE Harness routes ---
+const app = new Hono<{ Bindings: Env }>();
+app.use('*', cors({ origin: '*' }));
 
-    let response: Response;
+// Mount LINE Harness routes under /lh/ prefix to avoid conflicts with existing routes
+app.route('/lh', webhook);
+app.route('/lh', lhFriends);
+app.route('/lh', lhTags);
+app.route('/lh', lhScenarios);
+app.route('/lh', lhBroadcasts);
+app.route('/lh', lhUsers);
+app.route('/lh', lineAccounts);
+app.route('/lh', lhConversions);
+app.route('/lh', affiliates);
+app.route('/lh', webhooks);
+app.route('/lh', calendar);
+app.route('/lh', reminders);
+app.route('/lh', scoring);
+app.route('/lh', templates);
+app.route('/lh', chats);
+app.route('/lh', notifications);
+app.route('/lh', stripe);
+app.route('/lh', automations);
+app.route('/lh', richMenus);
+app.route('/lh', lhTrackedLinks);
+app.route('/lh', lhForms);
+app.route('/lh', adPlatforms);
+app.route('/lh', staff);
+app.route('/lh', images);
+app.route('/lh', liffRoutes);
 
-    try {
+// Fallback: existing lchatAI routes
+app.all('*', async (c) => {
+  const request = c.req.raw;
+  const env = c.env;
+  const url = new URL(request.url);
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  };
+  if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  let response: Response;
+
+  try {
       if (url.pathname === '/health') {
         response = Response.json({ status: 'ok', environment: env.ENVIRONMENT, timestamp: new Date().toISOString() });
       } else if (url.pathname === '/') {
@@ -130,7 +209,40 @@ export default {
     const newHeaders = new Headers(response.headers);
     for (const [key, value] of Object.entries(corsHeaders)) newHeaders.set(key, value);
     return new Response(response.body, { status: response.status, headers: newHeaders });
-  },
+});
+
+// Scheduled handler for LINE Harness cron triggers
+async function scheduled(
+  _event: ScheduledEvent,
+  env: Env,
+  _ctx: ExecutionContext,
+): Promise<void> {
+  if (!env.LINE_CHANNEL_ACCESS_TOKEN) return;
+  try {
+    const dbAccounts = await getLineAccounts(env.DB);
+    const activeTokens = new Set<string>();
+    activeTokens.add(env.LINE_CHANNEL_ACCESS_TOKEN);
+    for (const account of dbAccounts) {
+      if (account.is_active) activeTokens.add(account.channel_access_token);
+    }
+    const jobs: Promise<void>[] = [];
+    for (const token of activeTokens) {
+      const lineClient = new LineClient(token);
+      jobs.push(
+        processStepDeliveries(env.DB, lineClient, env.WORKER_URL || ''),
+        processScheduledBroadcasts(env.DB, lineClient, env.WORKER_URL || ''),
+        processReminderDeliveries(env.DB, lineClient),
+      );
+    }
+    jobs.push(checkAccountHealth(env.DB));
+    jobs.push(refreshLineAccessTokens(env.DB));
+    await Promise.allSettled(jobs);
+  } catch {}
+}
+
+export default {
+  fetch: app.fetch,
+  scheduled,
 };
 
 // --- Admin Users/Tenants ---
