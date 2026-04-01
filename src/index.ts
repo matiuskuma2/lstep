@@ -232,7 +232,28 @@ app.all('*', async (c) => {
   let response: Response;
 
   try {
-      if (url.pathname === '/api/debug/schema' && request.method === 'GET') {
+      if (url.pathname === '/api/debug/upstream-smoke' && request.method === 'GET') {
+        // Upstream recovery smoke test: check all /lh/api/* endpoints
+        const endpoints = [
+          '/lh/api/line-accounts', '/lh/api/friends', '/lh/api/scenarios',
+          '/lh/api/tags', '/lh/api/forms', '/lh/api/broadcasts',
+          '/lh/api/tracked-links', '/lh/api/conversions', '/lh/api/automations',
+          '/lh/api/scoring/rules', '/lh/api/reminders', '/lh/api/templates',
+          '/lh/api/chats', '/lh/api/affiliates', '/lh/api/notifications/rules',
+          '/lh/api/staff',
+        ];
+        const results: Record<string, any> = {};
+        for (const ep of endpoints) {
+          try {
+            const testUrl = new URL(ep, request.url).toString();
+            const res = await app.fetch(new Request(testUrl, { headers: { 'X-Api-Key': 'smoke-test' } }), env);
+            const body = await res.text();
+            results[ep] = { status: res.status, ok: res.status < 500, preview: body.substring(0, 100) };
+          } catch (e: any) { results[ep] = { status: 'error', message: e.message }; }
+        }
+        const passed = Object.values(results).filter((r: any) => r.ok).length;
+        response = Response.json({ status: 'ok', total: endpoints.length, passed, failed: endpoints.length - passed, results });
+      } else if (url.pathname === '/api/debug/schema' && request.method === 'GET') {
         // Live schema check: returns actual table names and columns from D1
         const tables = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name").all();
         const schema: Record<string, string[]> = {};
