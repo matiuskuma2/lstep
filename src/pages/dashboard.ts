@@ -8,15 +8,18 @@ export function getDashboardHtml(): string {
     async function loadDashboard() {
       try {
         const [linksD, friendsD, scenariosD, cvsD] = await Promise.all([
-          fetchJson('/api/tracked-links'),
-          fetchJson('/api/friends'),
-          fetchJson('/api/scenarios'),
+          fetchJson('/lh/api/tracked-links'),
+          fetchJson('/lh/api/friends'),
+          fetchJson('/lh/api/scenarios'),
           fetchJson('/api/conversion-points'),
         ]);
+        const friendCount = (friendsD.data && friendsD.data.total) || (friendsD.data && friendsD.data.items || []).length || (friendsD.friends||[]).length;
+        const scenarioCount = (scenariosD.data || scenariosD.scenarios || []).length;
+        const linkCount = (linksD.data || linksD.links || []).length;
         document.getElementById('stats').innerHTML =
-          '<div class="stat"><div class="num">' + (linksD.links||[]).length + '</div><div class="label">トラッキングリンク</div></div>' +
-          '<div class="stat"><div class="num">' + (scenariosD.scenarios||[]).length + '</div><div class="label">シナリオ</div></div>' +
-          '<div class="stat"><div class="num">' + (friendsD.friends||[]).length + '</div><div class="label">友だち</div></div>' +
+          '<div class="stat"><div class="num">' + linkCount + '</div><div class="label">トラッキングリンク</div></div>' +
+          '<div class="stat"><div class="num">' + scenarioCount + '</div><div class="label">シナリオ</div></div>' +
+          '<div class="stat"><div class="num">' + friendCount + '</div><div class="label">友だち</div></div>' +
           '<div class="stat"><div class="num">' + (cvsD.conversion_points||[]).length + '</div><div class="label">CV</div></div>';
       } catch(e) {
         document.getElementById('stats').innerHTML = '<div class="stat"><div class="num" style="color:#c62828">-</div><div class="label" style="color:#c62828">' + esc(e.message) + '</div></div>';
