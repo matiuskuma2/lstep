@@ -27,40 +27,7 @@ import { getBotsPageHtml, getKnowledgePageHtml } from './pages/bot-knowledge';
 import { getAiLogsPageHtml } from './pages/ai-logs';
 import { getLineAccountsPageHtml } from './pages/line-accounts';
 
-// LINE Harness OSS routes
-import { webhook } from './line-harness/routes/webhook.js';
-import { friends as lhFriends } from './line-harness/routes/friends.js';
-import { tags as lhTags } from './line-harness/routes/tags.js';
-import { scenarios as lhScenarios } from './line-harness/routes/scenarios.js';
-import { broadcasts as lhBroadcasts } from './line-harness/routes/broadcasts.js';
-import { users as lhUsers } from './line-harness/routes/users.js';
-import { lineAccounts } from './line-harness/routes/line-accounts.js';
-import { conversions as lhConversions } from './line-harness/routes/conversions.js';
-import { affiliates } from './line-harness/routes/affiliates.js';
-import { webhooks } from './line-harness/routes/webhooks.js';
-import { calendar } from './line-harness/routes/calendar.js';
-import { reminders } from './line-harness/routes/reminders.js';
-import { scoring } from './line-harness/routes/scoring.js';
-import { templates } from './line-harness/routes/templates.js';
-import { chats } from './line-harness/routes/chats.js';
-import { notifications } from './line-harness/routes/notifications.js';
-import { stripe } from './line-harness/routes/stripe.js';
-import { automations } from './line-harness/routes/automations.js';
-import { richMenus } from './line-harness/routes/rich-menus.js';
-import { trackedLinks as lhTrackedLinks } from './line-harness/routes/tracked-links.js';
-import { forms as lhForms } from './line-harness/routes/forms.js';
-import { adPlatforms } from './line-harness/routes/ad-platforms.js';
-import { staff } from './line-harness/routes/staff.js';
-import { images } from './line-harness/routes/images.js';
-import { liffRoutes } from './line-harness/routes/liff.js';
-// LINE Harness services
-import { processStepDeliveries } from './line-harness/services/step-delivery.js';
-import { processScheduledBroadcasts } from './line-harness/services/broadcast.js';
-import { processReminderDeliveries } from './line-harness/services/reminder-delivery.js';
-import { checkAccountHealth } from './line-harness/services/ban-monitor.js';
-import { refreshLineAccessTokens } from './line-harness/services/token-refresh.js';
-import { getLineAccounts } from './line-harness/db/index.js';
-import { LineClient } from './line-harness/line-sdk/index.js';
+// LINE Harness DB adapters only (approach B: no Hono routes)
 import { createLineAccount, getLineAccounts as getLineAccountsList, updateLineAccount, deleteLineAccount } from './line-harness/db/line-accounts.js';
 import { verifySignature } from './line-harness/line-sdk/webhook.js';
 import { upsertFriend } from './line-harness/db/friends.js';
@@ -82,36 +49,13 @@ export interface Env {
   ENVIRONMENT: string;
 }
 
-// --- Hono app with LINE Harness routes ---
+// --- Hono app ---
 const app = new Hono<{ Bindings: Env }>();
 app.use('*', cors({ origin: '*' }));
 
-// Mount LINE Harness routes under /lh/ prefix to avoid conflicts with existing routes
-app.route('/lh', webhook);
-app.route('/lh', lhFriends);
-app.route('/lh', lhTags);
-app.route('/lh', lhScenarios);
-app.route('/lh', lhBroadcasts);
-app.route('/lh', lhUsers);
-app.route('/lh', lineAccounts);
-app.route('/lh', lhConversions);
-app.route('/lh', affiliates);
-app.route('/lh', webhooks);
-app.route('/lh', calendar);
-app.route('/lh', reminders);
-app.route('/lh', scoring);
-app.route('/lh', templates);
-app.route('/lh', chats);
-app.route('/lh', notifications);
-app.route('/lh', stripe);
-app.route('/lh', automations);
-app.route('/lh', richMenus);
-app.route('/lh', lhTrackedLinks);
-app.route('/lh', lhForms);
-app.route('/lh', adPlatforms);
-app.route('/lh', staff);
-app.route('/lh', images);
-app.route('/lh', liffRoutes);
+// LINE Harness Hono routes are NOT mounted here.
+// We use approach B: DB adapters only, own handlers in the catch-all below.
+// LINE Harness routes have unresolved imports (../index.js) and would break the build.
 
 // Fallback: existing lchatAI routes
 app.all('*', async (c) => {
@@ -230,33 +174,13 @@ app.all('*', async (c) => {
     return new Response(response.body, { status: response.status, headers: newHeaders });
 });
 
-// Scheduled handler for LINE Harness cron triggers
+// Scheduled handler placeholder — LINE Harness services will be wired one by one
 async function scheduled(
   _event: ScheduledEvent,
   env: Env,
   _ctx: ExecutionContext,
 ): Promise<void> {
-  if (!env.LINE_CHANNEL_ACCESS_TOKEN) return;
-  try {
-    const dbAccounts = await getLineAccounts(env.DB);
-    const activeTokens = new Set<string>();
-    activeTokens.add(env.LINE_CHANNEL_ACCESS_TOKEN);
-    for (const account of dbAccounts) {
-      if (account.is_active) activeTokens.add(account.channel_access_token);
-    }
-    const jobs: Promise<void>[] = [];
-    for (const token of activeTokens) {
-      const lineClient = new LineClient(token);
-      jobs.push(
-        processStepDeliveries(env.DB, lineClient, env.WORKER_URL || ''),
-        processScheduledBroadcasts(env.DB, lineClient, env.WORKER_URL || ''),
-        processReminderDeliveries(env.DB, lineClient),
-      );
-    }
-    jobs.push(checkAccountHealth(env.DB));
-    jobs.push(refreshLineAccessTokens(env.DB));
-    await Promise.allSettled(jobs);
-  } catch {}
+  // TODO: Wire step delivery, broadcast, reminder services individually
 }
 
 export default {
