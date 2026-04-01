@@ -23,10 +23,11 @@ export function getFriendsPageHtml(): string {
     <script>
     async function loadFriends() {
       try {
-        const d = await fetchJson('/api/friends');
-        showList('fList', d.friends || [], 5, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
-          items.map(f =>
-            '<tr><td>'+esc(f.display_name)+'</td><td style="font-size:11px;color:#999">'+(f.line_user_id||'-')+'</td><td>'+(f.ref_code||'-')+'</td><td><span class="badge badge-active">'+f.status+'</span></td><td>'+f.created_at.substring(0,10)+'</td></tr>'
+        const d = await fetchJson('/lh/api/friends');
+        const items = (d.data && d.data.items) || d.friends || [];
+        showList('fList', items, 5, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', list =>
+          list.map(f =>
+            '<tr><td>'+esc(f.displayName||f.display_name||'-')+'</td><td style="font-size:11px;color:#999">'+(f.lineUserId||f.line_user_id||'-')+'</td><td>'+(f.refCode||f.ref_code||'-')+'</td><td><span class="badge badge-active">'+(f.isFollowing!==undefined?(f.isFollowing?'active':'inactive'):(f.status||'active'))+'</span></td><td>'+(f.createdAt||f.created_at||'').substring(0,10)+'</td></tr>'
           ).join('')
         );
       } catch(e) { showError('fList', 5, e.message); }
