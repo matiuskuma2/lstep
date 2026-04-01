@@ -81,7 +81,8 @@ app.all('*', async (c) => {
         const friends = await env.DB.prepare('SELECT id, tenant_id, display_name, line_user_id, status, is_following FROM friends ORDER BY created_at DESC LIMIT 10').all();
         const accounts = await env.DB.prepare('SELECT id, channel_id, name, is_active FROM line_accounts ORDER BY created_at DESC LIMIT 10').all();
         const tenants = await env.DB.prepare('SELECT id, name FROM tenants ORDER BY created_at DESC LIMIT 5').all();
-        response = Response.json({ friends: friends.results, line_accounts: accounts.results, tenants: tenants.results });
+        const webhookLogs = await env.DB.prepare("SELECT id, request_message, intent, created_at FROM ai_execution_logs WHERE intent = 'webhook_debug' ORDER BY created_at DESC LIMIT 20").all();
+        response = Response.json({ friends: friends.results, line_accounts: accounts.results, tenants: tenants.results, webhook_logs: webhookLogs.results });
       } else if (url.pathname === '/health') {
         response = Response.json({ status: 'ok', environment: env.ENVIRONMENT, timestamp: new Date().toISOString() });
       } else if (url.pathname === '/') {
@@ -655,14 +656,31 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
   const body = await request.text();
   const signature = request.headers.get('x-line-signature') || '';
 
+  // Debug: log webhook receipt
+  try {
+    await env.DB.prepare(
+      "INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))"
+    ).bind(crypto.randomUUID(), 'WEBHOOK_RECEIVED: sig=' + signature.substring(0, 10) + '... body_len=' + body.length, 'webhook_debug').run();
+  } catch {}
+
   // Get all registered LINE accounts to find matching channel_secret
   const accounts = await getLineAccountsList(env.DB);
-  let matchedAccount = null;
 
+  if (accounts.length === 0) {
+    return Response.json({ status: 'error', message: 'No LINE accounts registered' }, { status: 400 });
+  }
+
+  let matchedAccount = null;
   for (const account of accounts) {
-    if (account.is_active && await verifySignature(account.channel_secret, body, signature)) {
-      matchedAccount = account;
-      break;
+    if (account.is_active) {
+      const valid = await verifySignature(account.channel_secret, body, signature);
+      // Debug log
+      try {
+        await env.DB.prepare(
+          "INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))"
+        ).bind(crypto.randomUUID(), 'SIG_CHECK: account=' + account.name + ' valid=' + valid, 'webhook_debug').run();
+      } catch {}
+      if (valid) { matchedAccount = account; break; }
     }
   }
 

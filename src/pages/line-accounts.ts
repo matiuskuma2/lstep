@@ -17,7 +17,7 @@ export function getLineAccountsPageHtml(): string {
     </div>
     <div class="card">
       <table>
-        <thead><tr><th>\u30a2\u30ab\u30a6\u30f3\u30c8\u540d</th><th>Channel ID</th><th>\u30b9\u30c6\u30fc\u30bf\u30b9</th><th>\u4f5c\u6210\u65e5</th><th>Webhook URL</th><th>\u64cd\u4f5c</th></tr></thead>
+        <thead><tr><th>\u30a2\u30ab\u30a6\u30f3\u30c8\u540d</th><th>Channel ID</th><th>\u30b9\u30c6\u30fc\u30bf\u30b9</th><th>\u8a8d\u8a3c\u60c5\u5831</th><th>Webhook URL</th><th>\u64cd\u4f5c</th></tr></thead>
         <tbody id="laList"><tr><td colspan="6">\u8aad\u307f\u8fbc\u307f\u4e2d...</td></tr></tbody>
       </table>
     </div>
@@ -25,10 +25,12 @@ export function getLineAccountsPageHtml(): string {
     async function loadAccounts() {
       try {
         const d = await fetchJson('/api/line-accounts');
-        showList('laList', d.accounts, 6, 'LINE\u30a2\u30ab\u30a6\u30f3\u30c8\u304c\u767b\u9332\u3055\u308c\u3066\u3044\u307e\u305b\u3093', items =>
-          items.map(a =>
-            '<tr><td>'+esc(a.name)+'</td><td style="font-size:11px;color:#999">'+esc(a.channel_id)+'</td><td><span class="badge '+(a.is_active?'badge-active':'badge-admin')+'">'+(a.is_active?'active':'inactive')+'</span></td><td>'+a.created_at.substring(0,10)+'</td><td style="font-size:11px;color:#1976d2;word-break:break-all">/lh/webhook</td><td style="white-space:nowrap"><button class="btn" style="padding:2px 8px;font-size:11px;background:#ffebee;color:#c62828;border:none;border-radius:4px;cursor:pointer" onclick="deleteAccount(\\''+a.id+'\\',\\''+esc(a.name).replace(/'/g,'')+'\\')">\\u524a\\u9664</button></td></tr>'
-          ).join('')
+        showList('laList', d.accounts, 6, 'LINE\\u30a2\\u30ab\\u30a6\\u30f3\\u30c8\\u304c\\u767b\\u9332\\u3055\\u308c\\u3066\\u3044\\u307e\\u305b\\u3093', items =>
+          items.map(a => {
+            const secretMask = a.channel_secret ? a.channel_secret.substring(0,6) + '...' : '-';
+            const tokenMask = a.channel_access_token ? a.channel_access_token.substring(0,10) + '...' : '-';
+            return '<tr><td>'+esc(a.name)+'</td><td style="font-size:11px;color:#999">'+esc(a.channel_id)+'</td><td><span class="badge '+(a.is_active?'badge-active':'badge-admin')+'">'+(a.is_active?'active':'inactive')+'</span></td><td style="font-size:10px;color:#999">Secret: '+esc(secretMask)+'<br>Token: '+esc(tokenMask)+'</td><td style="font-size:11px;color:#1976d2;word-break:break-all">/webhook</td><td style="white-space:nowrap"><button class="btn" style="padding:2px 8px;font-size:11px;background:#ffebee;color:#c62828;border:none;border-radius:4px;cursor:pointer" onclick="deleteAccount(\\''+a.id+'\\',\\''+esc(a.name).replace(/'/g,'')+'\\')">\\u524a\\u9664</button></td></tr>';
+          }).join('')
         );
       } catch(e) { showError('laList', 6, e.message); }
     }
