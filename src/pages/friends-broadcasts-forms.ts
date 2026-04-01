@@ -67,10 +67,11 @@ export function getBroadcastsPageHtml(): string {
     <script>
     async function loadBroadcasts() {
       try {
-        const d = await fetchJson('/api/broadcasts');
-        showList('bList', d.broadcasts || [], 4, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
+        const d = await fetchJson('/lh/api/broadcasts');
+        const bItems = d.data || d.broadcasts || [];
+        showList('bList', bItems, 4, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
           items.map(b =>
-            '<tr><td>'+esc(b.name)+'</td><td><span class="badge '+(b.status==='sent'?'badge-active':'badge-admin')+'">'+b.status+'</span></td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(b.message_content.substring(0,50))+'</td><td>'+b.created_at.substring(0,10)+'</td></tr>'
+            '<tr><td>'+esc(b.title||b.name||'-')+'</td><td><span class="badge '+(b.status==='sent'?'badge-active':'badge-admin')+'">'+(b.status||'-')+'</span></td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc((b.messageContent||b.message_content||'').substring(0,50))+'</td><td>'+(b.createdAt||b.created_at||'').substring(0,10)+'</td></tr>'
           ).join('')
         );
       } catch(e) { showError('bList', 4, e.message); }
@@ -112,10 +113,11 @@ export function getFormsPageHtml(): string {
     <script>
     async function loadForms() {
       try {
-        const d = await fetchJson('/api/forms');
-        showList('formList', d.forms || [], 4, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
+        const d = await fetchJson('/lh/api/forms');
+        const fItems = d.data || d.forms || [];
+        showList('formList', fItems, 4, '\u30c7\u30fc\u30bf\u304c\u3042\u308a\u307e\u305b\u3093', items =>
           items.map(f =>
-            '<tr><td>'+esc(f.name)+'</td><td>'+(f.description||'-')+'</td><td><span class="badge badge-active">'+f.status+'</span></td><td>'+f.created_at.substring(0,10)+'</td></tr>'
+            '<tr><td>'+esc(f.name)+'</td><td>'+(f.description||'-')+'</td><td><span class="badge badge-active">'+(f.status||'active')+'</span></td><td>'+(f.createdAt||f.created_at||'').substring(0,10)+'</td></tr>'
           ).join('')
         );
       } catch(e) { showError('formList', 4, e.message); }

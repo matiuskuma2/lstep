@@ -56,7 +56,7 @@ export function getTrackedLinksPageHtml(): string {
     <script>
     async function loadLinks() {
       try {
-        const d = await fetchJson('/api/tracked-links');
+        const d = await fetchJson('/lh/api/tracked-links');
         showList('linkList', d.links || [], 7, 'リンクがありません', items =>
           items.map(l =>
             '<tr><td style="font-size:11px;color:#999">' + l.id.substring(0,8) + '...</td>' +
