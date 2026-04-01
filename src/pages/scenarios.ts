@@ -48,10 +48,12 @@ export function getScenariosPageHtml(): string {
     </div>
     <script>
     let currentScenarioId = null;
+    let allScenarios = [];
     function toggleCreate() { const f=document.getElementById('createForm'); f.style.display=f.style.display==='none'?'block':'none'; }
     async function loadScenarios() {
       try {
         const d = await fetchJson('/lh/api/scenarios');
+        allScenarios = d.data || d.scenarios || [];
         const items = d.data || d.scenarios || [];
         showList('scenarioList', items, 5, '\u30b7\u30ca\u30ea\u30aa\u304c\u3042\u308a\u307e\u305b\u3093', list =>
           list.map(s =>
@@ -83,9 +85,9 @@ export function getScenariosPageHtml(): string {
     async function showDetail(id) {
       currentScenarioId = id;
       try {
-        const sr = await fetchJson('/api/scenarios/' + id);
-        const str = await fetchJson('/api/scenarios/' + id + '/steps');
-        const s = sr.data || sr.scenario || sr;
+        const s = allScenarios.find(function(x) { return x.id === id; }) || {};
+        const stepsRes = await fetch('/api/scenarios/' + id + '/steps', { headers: authHeaders() });
+        const str = stepsRes.ok ? await stepsRes.json() : { steps: [] };
         document.getElementById('detailTitle').textContent = s.name || id;
         document.getElementById('detailInfo').innerHTML = '<span class="badge badge-active">'+(s.triggerType||s.trigger_type||'-')+'</span> <span class="badge '+(s.isActive||s.status==='active'?'badge-active':'badge-admin')+'">'+(s.isActive!==undefined?(s.isActive?'active':'draft'):(s.status||'draft'))+'</span> <button class="btn" style="padding:2px 8px;font-size:11px;background:#ffebee;color:#c62828;border:none;border-radius:4px;cursor:pointer;margin-left:8px" onclick="deleteScenario()">削除</button>';
         const steps = str.data || str.steps || [];
