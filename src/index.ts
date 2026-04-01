@@ -27,11 +27,38 @@ import { getBotsPageHtml, getKnowledgePageHtml } from './pages/bot-knowledge';
 import { getAiLogsPageHtml } from './pages/ai-logs';
 import { getLineAccountsPageHtml } from './pages/line-accounts';
 
-// LINE Harness DB adapters only (approach B: no Hono routes)
+// LINE Harness DB adapters
 import { createLineAccount, getLineAccounts as getLineAccountsList, updateLineAccount, deleteLineAccount } from './line-harness/db/line-accounts.js';
 import { verifySignature } from './line-harness/line-sdk/webhook.js';
-import { upsertFriend } from './line-harness/db/friends.js';
 import type { WebhookRequestBody } from './line-harness/line-sdk/types.js';
+
+// LINE Harness upstream Hono routes (bridge via src/line-harness/index.ts)
+import { webhook as lhWebhook } from './line-harness/routes/webhook.js';
+import { friends as lhFriends } from './line-harness/routes/friends.js';
+import { tags as lhTags } from './line-harness/routes/tags.js';
+import { scenarios as lhScenarios } from './line-harness/routes/scenarios.js';
+import { broadcasts as lhBroadcasts } from './line-harness/routes/broadcasts.js';
+import { users as lhUsers } from './line-harness/routes/users.js';
+import { lineAccounts as lhLineAccounts } from './line-harness/routes/line-accounts.js';
+import { conversions as lhConversions } from './line-harness/routes/conversions.js';
+import { affiliates as lhAffiliates } from './line-harness/routes/affiliates.js';
+import { webhooks as lhWebhooks } from './line-harness/routes/webhooks.js';
+import { calendar as lhCalendar } from './line-harness/routes/calendar.js';
+import { reminders as lhReminders } from './line-harness/routes/reminders.js';
+import { scoring as lhScoring } from './line-harness/routes/scoring.js';
+import { templates as lhTemplates } from './line-harness/routes/templates.js';
+import { chats as lhChats } from './line-harness/routes/chats.js';
+import { notifications as lhNotifications } from './line-harness/routes/notifications.js';
+import { stripe as lhStripe } from './line-harness/routes/stripe.js';
+import { automations as lhAutomations } from './line-harness/routes/automations.js';
+import { richMenus as lhRichMenus } from './line-harness/routes/rich-menus.js';
+import { trackedLinks as lhTrackedLinks } from './line-harness/routes/tracked-links.js';
+import { forms as lhForms } from './line-harness/routes/forms.js';
+import { adPlatforms as lhAdPlatforms } from './line-harness/routes/ad-platforms.js';
+import { staff as lhStaff } from './line-harness/routes/staff.js';
+import { images as lhImages } from './line-harness/routes/images.js';
+import { liffRoutes as lhLiff } from './line-harness/routes/liff.js';
+import { health as lhHealth } from './line-harness/routes/health.js';
 
 export interface Env {
   DB: D1Database;
@@ -53,7 +80,36 @@ export interface Env {
 const app = new Hono<{ Bindings: Env }>();
 app.use('*', cors({ origin: '*' }));
 
-// Webhook: direct Hono route (not in catch-all, to avoid body consumption issues)
+// Mount LINE Harness upstream routes at /lh/*
+// These are the original complete routes from LINE Harness OSS
+app.route('/lh', lhWebhook);
+app.route('/lh', lhFriends);
+app.route('/lh', lhTags);
+app.route('/lh', lhScenarios);
+app.route('/lh', lhBroadcasts);
+app.route('/lh', lhUsers);
+app.route('/lh', lhLineAccounts);
+app.route('/lh', lhConversions);
+app.route('/lh', lhAffiliates);
+app.route('/lh', lhWebhooks);
+app.route('/lh', lhCalendar);
+app.route('/lh', lhReminders);
+app.route('/lh', lhScoring);
+app.route('/lh', lhTemplates);
+app.route('/lh', lhChats);
+app.route('/lh', lhNotifications);
+app.route('/lh', lhStripe);
+app.route('/lh', lhAutomations);
+app.route('/lh', lhRichMenus);
+app.route('/lh', lhTrackedLinks);
+app.route('/lh', lhForms);
+app.route('/lh', lhAdPlatforms);
+app.route('/lh', lhStaff);
+app.route('/lh', lhImages);
+app.route('/lh', lhLiff);
+app.route('/lh', lhHealth);
+
+// Our webhook: direct Hono route with tenant support
 app.post('/webhook', async (c) => {
   const env = c.env;
   const body = await c.req.text();
