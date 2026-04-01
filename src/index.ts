@@ -180,10 +180,9 @@ app.post('/webhook', async (c) => {
         // Step 3: Immediate first step + enrollment for subsequent steps
         try {
           const scenario = await env.DB.prepare("SELECT s.id FROM scenarios s WHERE s.trigger_type = 'friend_add' AND s.status IN ('active','draft') AND EXISTS (SELECT 1 FROM scenario_steps WHERE scenario_id = s.id) LIMIT 1").first<{id: string}>();
+          try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'S3: scenario=' + (scenario ? scenario.id.substring(0,8) : 'none'), 'webhook_debug').run(); } catch {}
           if (scenario) {
             const firstStep = await env.DB.prepare('SELECT id, message_content FROM scenario_steps WHERE scenario_id = ? AND step_order = 1 LIMIT 1').bind(scenario.id).first<{id: string; message_content: string}>();
-
-            // Send first step immediately
             if (firstStep) {
               await fetch('https://api.line.me/v2/bot/message/push', {
                 method: 'POST',
@@ -191,21 +190,25 @@ app.post('/webhook', async (c) => {
                 body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text: firstStep.message_content }] }),
               });
             }
-
-            // Create enrollment for Cron to handle step 2+
             const friend = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first<{id: string}>();
+            try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'S3: friend=' + (friend ? friend.id.substring(0,8) : 'NOT_FOUND'), 'webhook_debug').run(); } catch {}
             if (friend) {
               await env.DB.prepare('DELETE FROM friend_scenarios WHERE friend_id = ?').bind(friend.id).run();
-              const secondStep = await env.DB.prepare('SELECT delay_minutes FROM scenario_steps WHERE scenario_id = ? AND step_order = 2 LIMIT 1').bind(scenario.id).first<{delay_minutes: number}>();
+              const hasStep2 = await env.DB.prepare('SELECT id FROM scenario_steps WHERE scenario_id = ? AND step_order = 2 LIMIT 1').bind(scenario.id).first();
               const now = new Date().toISOString();
-              const nextDelivery = secondStep ? new Date(Date.now() + (secondStep.delay_minutes || 1) * 60 * 1000).toISOString() : null;
-              await env.DB.prepare('INSERT INTO friend_scenarios (id, friend_id, scenario_id, current_step_order, status, started_at, next_delivery_at, updated_at) VALUES (?,?,?,?,?,?,?,?)').bind(
-                crypto.randomUUID(), friend.id, scenario.id, 1, nextDelivery ? 'active' : 'completed', now, nextDelivery, now
-              ).run();
+              const nextDelivery = hasStep2 ? new Date(Date.now() + 60000).toISOString() : null;
+              try {
+                await env.DB.prepare('INSERT INTO friend_scenarios (id, friend_id, scenario_id, current_step_order, status, started_at, next_delivery_at, updated_at) VALUES (?,?,?,?,?,?,?,?)').bind(
+                  crypto.randomUUID(), friend.id, scenario.id, 1, nextDelivery ? 'active' : 'completed', now, nextDelivery, now
+                ).run();
+                try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'S3: ENROLLED next=' + (nextDelivery || 'done'), 'webhook_debug').run(); } catch {}
+              } catch (ie: any) {
+                try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'S3_INSERT: ' + (ie.message || String(ie)), 'webhook_debug').run(); } catch {}
+              }
             }
           }
         } catch (err: any) {
-          try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'STEP3_ERR: ' + (err.message || String(err)), 'webhook_debug').run(); } catch {}
+          try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'S3_ERR: ' + (err.message || String(err)), 'webhook_debug').run(); } catch {}
         }
 
         try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'SAVED: name=' + displayName + ' existing=' + !!existing, 'webhook_debug').run(); } catch {}
