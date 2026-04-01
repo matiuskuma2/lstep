@@ -34,7 +34,7 @@ export function getTagsPageHtml(): string {
       er.style.display='none';su.style.display='none';
       const name=document.getElementById('tagName').value;
       if(!name){er.textContent='\u30bf\u30b0\u540d\u5fc5\u9808';er.style.display='block';return;}
-      const r=await fetch('/api/tags',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,color:document.getElementById('tagColor').value,description:document.getElementById('tagDesc').value||undefined})});
+      const r=await fetch('/api/tags',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,color:document.getElementById('tagColor').value,description:document.getElementById('tagDesc').value||undefined,tenant_id:getSelectedTenantId()||undefined})});
       const d=await r.json();
       if(d.status==='ok'){su.textContent='\u4f5c\u6210';su.style.display='block';document.getElementById('tagName').value='';loadTags();}
       else{er.textContent=d.message;er.style.display='block';}
@@ -82,7 +82,7 @@ export function getConversionsPageHtml(): string {
       er.style.display='none';su.style.display='none';
       const name=document.getElementById('cvName').value,code=document.getElementById('cvCode').value;
       if(!name||!code){er.textContent='CV\u540d\u3068\u30b3\u30fc\u30c9\u306f\u5fc5\u9808';er.style.display='block';return;}
-      const r=await fetch('/api/conversion-points',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,code,scope:document.getElementById('cvScope').value,verification_method:document.getElementById('cvMethod').value})});
+      const r=await fetch('/api/conversion-points',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,code,scope:document.getElementById('cvScope').value,verification_method:document.getElementById('cvMethod').value,tenant_id:getSelectedTenantId()||undefined})});
       const d=await r.json();
       if(d.status==='ok'){su.textContent='\u4f5c\u6210';su.style.display='block';document.getElementById('cvName').value='';document.getElementById('cvCode').value='';loadCVs();}
       else{er.textContent=d.message;er.style.display='block';}

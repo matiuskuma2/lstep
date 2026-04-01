@@ -56,7 +56,7 @@ export function getBotsPageHtml(): string {
       const strategy=document.getElementById('botStrategy').value;
       if(!name||!strategy){er.textContent='Bot\u540d\u3068\u6226\u7565\u306f\u5fc5\u9808';er.style.display='block';return;}
       try {
-        const r=await fetch('/api/bots',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,strategy,tone:document.getElementById('botTone').value,goal:document.getElementById('botGoal').value||undefined,target_audience:document.getElementById('botTarget').value||undefined,description:document.getElementById('botDesc').value||undefined})});
+        const r=await fetch('/api/bots',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,strategy,tone:document.getElementById('botTone').value,goal:document.getElementById('botGoal').value||undefined,target_audience:document.getElementById('botTarget').value||undefined,description:document.getElementById('botDesc').value||undefined,tenant_id:getSelectedTenantId()||undefined})});
         const d=await r.json();
         if(d.status==='ok'){su.textContent='Bot\u3092\u4f5c\u6210\u3057\u307e\u3057\u305f';su.style.display='block';document.getElementById('botName').value='';document.getElementById('botStrategy').value='';loadBots();}
         else{er.textContent=d.message||'\u4f5c\u6210\u5931\u6557';er.style.display='block';}
@@ -144,7 +144,7 @@ export function getKnowledgePageHtml(): string {
       const content=document.getElementById('kContent').value;
       if(!title||!content){er.textContent='\u30bf\u30a4\u30c8\u30eb\u3068\u5185\u5bb9\u306f\u5fc5\u9808';er.style.display='block';return;}
       try {
-        const r=await fetch('/api/knowledge',{method:'POST',headers:authHeaders(),body:JSON.stringify({title,content,category:document.getElementById('kCategory').value})});
+        const r=await fetch('/api/knowledge',{method:'POST',headers:authHeaders(),body:JSON.stringify({title,content,category:document.getElementById('kCategory').value,tenant_id:getSelectedTenantId()||undefined})});
         const d=await r.json();
         if(d.status==='ok'){su.textContent='\u4f5c\u6210\u3057\u307e\u3057\u305f';su.style.display='block';document.getElementById('kTitle').value='';document.getElementById('kContent').value='';loadKnowledge();}
         else{er.textContent=d.message||'\u4f5c\u6210\u5931\u6557';er.style.display='block';}

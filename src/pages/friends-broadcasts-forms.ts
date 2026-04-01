@@ -35,7 +35,7 @@ export function getFriendsPageHtml(): string {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');er.style.display='none';su.style.display='none';
       const name=document.getElementById('fName').value;
       if(!name){er.textContent='\u8868\u793a\u540d\u5fc5\u9808';er.style.display='block';return;}
-      const r=await fetch('/api/friends',{method:'POST',headers:authHeaders(),body:JSON.stringify({display_name:name,ref_code:document.getElementById('fRef').value||undefined})});
+      const r=await fetch('/api/friends',{method:'POST',headers:authHeaders(),body:JSON.stringify({display_name:name,ref_code:document.getElementById('fRef').value||undefined,tenant_id:getSelectedTenantId()||undefined})});
       const d=await r.json();
       if(d.status==='ok'){su.textContent='\u8ffd\u52a0';su.style.display='block';document.getElementById('fName').value='';loadFriends();}
       else{er.textContent=d.message;er.style.display='block';}
@@ -78,7 +78,7 @@ export function getBroadcastsPageHtml(): string {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');er.style.display='none';su.style.display='none';
       const name=document.getElementById('bName').value,content=document.getElementById('bContent').value;
       if(!name||!content){er.textContent='\u914d\u4fe1\u540d\u3068\u5185\u5bb9\u5fc5\u9808';er.style.display='block';return;}
-      const r=await fetch('/api/broadcasts',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,message_content:content})});
+      const r=await fetch('/api/broadcasts',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,message_content:content,tenant_id:getSelectedTenantId()||undefined})});
       const d=await r.json();
       if(d.status==='ok'){su.textContent='\u4f5c\u6210';su.style.display='block';document.getElementById('bName').value='';document.getElementById('bContent').value='';loadBroadcasts();}
       else{er.textContent=d.message;er.style.display='block';}
@@ -123,7 +123,7 @@ export function getFormsPageHtml(): string {
       const er=document.getElementById('cErr'),su=document.getElementById('cSuc');er.style.display='none';su.style.display='none';
       const name=document.getElementById('formName').value;
       if(!name){er.textContent='\u30d5\u30a9\u30fc\u30e0\u540d\u5fc5\u9808';er.style.display='block';return;}
-      const r=await fetch('/api/forms',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,description:document.getElementById('formDesc').value||undefined})});
+      const r=await fetch('/api/forms',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,description:document.getElementById('formDesc').value||undefined,tenant_id:getSelectedTenantId()||undefined})});
       const d=await r.json();
       if(d.status==='ok'){su.textContent='\u4f5c\u6210';su.style.display='block';document.getElementById('formName').value='';loadForms();}
       else{er.textContent=d.message;er.style.display='block';}
