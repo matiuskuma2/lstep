@@ -62,6 +62,9 @@ import { refreshLineAccessTokens } from './line-harness/services/token-refresh.j
 import { getLineAccounts } from './line-harness/db/index.js';
 import { LineClient } from './line-harness/line-sdk/index.js';
 import { createLineAccount, getLineAccounts as getLineAccountsList, updateLineAccount, deleteLineAccount } from './line-harness/db/line-accounts.js';
+import { verifySignature } from './line-harness/line-sdk/webhook.js';
+import { upsertFriend } from './line-harness/db/friends.js';
+import type { WebhookRequestBody } from './line-harness/line-sdk/types.js';
 
 export interface Env {
   DB: D1Database;
@@ -125,7 +128,9 @@ app.all('*', async (c) => {
   let response: Response;
 
   try {
-      if (url.pathname === '/health') {
+      if (url.pathname === '/webhook' && request.method === 'POST') {
+        response = await handleWebhook(request, env);
+      } else if (url.pathname === '/health') {
         response = Response.json({ status: 'ok', environment: env.ENVIRONMENT, timestamp: new Date().toISOString() });
       } else if (url.pathname === '/') {
         response = Response.json({ name: 'lchatAI-api', environment: env.ENVIRONMENT, version: '0.13.0' });
@@ -713,6 +718,57 @@ async function handleAiChatRoute(request: Request, url: URL, env: Env): Promise<
   return Response.json({ error: 'method not allowed' }, { status: 405 });
 }
 // --- LINE Accounts ---
+// --- Webhook ---
+async function handleWebhook(request: Request, env: Env): Promise<Response> {
+  const body = await request.text();
+  const signature = request.headers.get('x-line-signature') || '';
+
+  // Get all registered LINE accounts to find matching channel_secret
+  const accounts = await getLineAccountsList(env.DB);
+  let matchedAccount = null;
+
+  for (const account of accounts) {
+    if (account.is_active && await verifySignature(account.channel_secret, body, signature)) {
+      matchedAccount = account;
+      break;
+    }
+  }
+
+  if (!matchedAccount) {
+    return Response.json({ status: 'error', message: 'Invalid signature' }, { status: 401 });
+  }
+
+  // Parse webhook events
+  let parsed: WebhookRequestBody;
+  try { parsed = JSON.parse(body); } catch { return Response.json({ status: 'ok' }); }
+
+  // Process events
+  for (const event of parsed.events) {
+    try {
+      if (event.type === 'follow') {
+        // Friend added
+        const lineUserId = event.source?.userId;
+        if (lineUserId) {
+          await upsertFriend(env.DB, { lineUserId, displayName: null });
+        }
+      } else if (event.type === 'unfollow') {
+        // Friend unfollowed — mark as not following
+        const lineUserId = event.source?.userId;
+        if (lineUserId) {
+          await env.DB.prepare(
+            "UPDATE friends SET is_following = 0, updated_at = datetime('now') WHERE line_user_id = ?"
+          ).bind(lineUserId).run();
+        }
+      }
+    } catch (e) {
+      // Log error but don't fail the webhook
+      console.error('Webhook event processing error:', e);
+    }
+  }
+
+  return Response.json({ status: 'ok' });
+}
+
 async function handleLineAccounts(request: Request, url: URL, env: Env): Promise<Response> {
   if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
   const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
