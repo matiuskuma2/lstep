@@ -184,4 +184,26 @@ export class KnowledgeAdapter {
     const r = await this.db.prepare('SELECT * FROM knowledge_items ORDER BY created_at DESC').all<KnowledgeItem>();
     return r.results || [];
   }
+
+  async update(id: string, input: { title?: string; content?: string; category?: string }): Promise<KnowledgeItem> {
+    const item = await this.db.prepare('SELECT * FROM knowledge_items WHERE id = ?').bind(id).first<KnowledgeItem>();
+    if (!item) throw new Error('Knowledge not found');
+    if (input.title !== undefined) {
+      await this.db.prepare("UPDATE knowledge_items SET title = ?, updated_at = datetime('now') WHERE id = ?").bind(input.title, id).run();
+    }
+    if (input.content !== undefined) {
+      await this.db.prepare("UPDATE knowledge_items SET content = ?, updated_at = datetime('now') WHERE id = ?").bind(input.content, id).run();
+    }
+    if (input.category !== undefined) {
+      await this.db.prepare("UPDATE knowledge_items SET category = ?, updated_at = datetime('now') WHERE id = ?").bind(input.category, id).run();
+    }
+    const updated = await this.db.prepare('SELECT * FROM knowledge_items WHERE id = ?').bind(id).first<KnowledgeItem>();
+    return updated!;
+  }
+
+  async delete(id: string): Promise<void> {
+    const item = await this.db.prepare('SELECT id FROM knowledge_items WHERE id = ?').bind(id).first();
+    if (!item) throw new Error('Knowledge not found');
+    await this.db.prepare("UPDATE knowledge_items SET status = 'deleted', updated_at = datetime('now') WHERE id = ?").bind(id).run();
+  }
 }
