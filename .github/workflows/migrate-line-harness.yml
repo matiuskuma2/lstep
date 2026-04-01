@@ -28,4 +28,4 @@ jobs:
         run: |
           echo "## D1 Migration Complete" >> $GITHUB_STEP_SUMMARY
           echo "- **File:** db/migrations/010_line_harness_full_schema.sql" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tables:** LINE Harness full schema (39 tables)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tables:** LINE Harness full schema (39 tables including line_accounts)" >> $GITHUB_STEP_SUMMARY
