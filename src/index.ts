@@ -185,12 +185,17 @@ app.post('/webhook', async (c) => {
             try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'ENROLL: friend=' + friend.id.substring(0,8) + ' tenant=' + friend.tenant_id.substring(0,8) + ' scenarios_found=' + (scenarios.results || []).length, 'webhook_debug').run(); } catch {}
             for (const scenario of (scenarios.results || [])) {
               const enrolled = await env.DB.prepare('SELECT id FROM friend_scenarios WHERE friend_id = ? AND scenario_id = ?').bind(friend.id, scenario.id).first();
+              try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'CHECK: scenario=' + scenario.id.substring(0,8) + ' already_enrolled=' + !!enrolled, 'webhook_debug').run(); } catch {}
               if (!enrolled) {
-                const firstStep = await env.DB.prepare('SELECT delay_minutes FROM scenario_steps WHERE scenario_id = ? ORDER BY step_order ASC LIMIT 1').bind(scenario.id).first<{delay_minutes: number}>();
-                const delayMs = (firstStep?.delay_minutes || 0) * 60 * 1000;
-                const nextDelivery = new Date(Date.now() + delayMs).toISOString();
-                await env.DB.prepare('INSERT INTO friend_scenarios (id, friend_id, scenario_id, current_step_order, status, started_at, next_delivery_at, updated_at) VALUES (?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(), friend.id, scenario.id, 0, 'active', new Date().toISOString(), nextDelivery, new Date().toISOString()).run();
-                try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'ENROLLED: scenario=' + scenario.id.substring(0,8) + ' next_delivery=' + nextDelivery, 'webhook_debug').run(); } catch {}
+                try {
+                  const firstStep = await env.DB.prepare('SELECT delay_minutes FROM scenario_steps WHERE scenario_id = ? ORDER BY step_order ASC LIMIT 1').bind(scenario.id).first<{delay_minutes: number}>();
+                  const delayMs = (firstStep?.delay_minutes || 0) * 60 * 1000;
+                  const nextDelivery = new Date(Date.now() + delayMs).toISOString();
+                  await env.DB.prepare('INSERT INTO friend_scenarios (id, friend_id, scenario_id, current_step_order, status, started_at, next_delivery_at, updated_at) VALUES (?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(), friend.id, scenario.id, 0, 'active', new Date().toISOString(), nextDelivery, new Date().toISOString()).run();
+                  try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'ENROLLED: scenario=' + scenario.id.substring(0,8), 'webhook_debug').run(); } catch {}
+                } catch (insertErr: any) {
+                  try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'INSERT_ERR: ' + (insertErr.message || String(insertErr)), 'webhook_debug').run(); } catch {}
+                }
               }
             }
           } else {
