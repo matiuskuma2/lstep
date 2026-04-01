@@ -130,6 +130,14 @@ app.all('*', async (c) => {
   try {
       if (url.pathname === '/webhook' && request.method === 'POST') {
         response = await handleWebhook(request, env);
+      } else if (url.pathname === '/webhook' && request.method === 'GET') {
+        response = Response.json({ status: 'ok', message: 'Webhook endpoint active. Use POST for LINE events.' });
+      } else if (url.pathname === '/api/debug/db' && request.method === 'GET') {
+        // Temporary debug endpoint - shows raw DB state
+        const friends = await env.DB.prepare('SELECT id, tenant_id, display_name, line_user_id, status, is_following FROM friends ORDER BY created_at DESC LIMIT 10').all();
+        const accounts = await env.DB.prepare('SELECT id, channel_id, name, is_active FROM line_accounts ORDER BY created_at DESC LIMIT 10').all();
+        const tenants = await env.DB.prepare('SELECT id, name FROM tenants ORDER BY created_at DESC LIMIT 5').all();
+        response = Response.json({ friends: friends.results, line_accounts: accounts.results, tenants: tenants.results });
       } else if (url.pathname === '/health') {
         response = Response.json({ status: 'ok', environment: env.ENVIRONMENT, timestamp: new Date().toISOString() });
       } else if (url.pathname === '/') {
