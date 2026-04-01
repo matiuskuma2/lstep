@@ -224,22 +224,8 @@ app.post('/webhook', async (c) => {
 
 app.get('/webhook', (c) => c.json({ status: 'ok', message: 'Webhook endpoint active. Use POST for LINE events.' }));
 
-// Fallback: existing lchatAI routes
-app.all('*', async (c) => {
-  // Build a fresh Request with all original headers preserved
-  const originalHeaders = new Headers();
-  c.req.raw.headers.forEach((v, k) => originalHeaders.set(k, v));
-  const bodyMethods = ['POST', 'PUT', 'PATCH'];
-  let bodyContent: string | null = null;
-  if (bodyMethods.includes(c.req.method)) {
-    try { bodyContent = await c.req.text(); } catch {}
-  }
-  const request = new Request(c.req.url, {
-    method: c.req.method,
-    headers: originalHeaders,
-    body: bodyContent,
-  });
-  const env = c.env;
+// Legacy handler for all non-Hono routes (bypasses Hono entirely)
+async function legacyFetch(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -382,7 +368,7 @@ app.all('*', async (c) => {
     const newHeaders = new Headers(response.headers);
     for (const [key, value] of Object.entries(corsHeaders)) newHeaders.set(key, value);
     return new Response(response.body, { status: response.status, headers: newHeaders });
-});
+}
 
 // Scheduled handler placeholder — LINE Harness services will be wired one by one
 async function scheduled(
@@ -448,7 +434,15 @@ async function scheduled(
 }
 
 export default {
-  fetch: app.fetch,
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    // /lh/* and /webhook → Hono app (LINE Harness upstream + webhook)
+    if (url.pathname.startsWith('/lh/') || url.pathname === '/lh' || url.pathname === '/webhook') {
+      return app.fetch(request, env);
+    }
+    // Everything else → legacy handler (preserves auth headers)
+    return legacyFetch(request, env);
+  },
   scheduled,
 };
 
