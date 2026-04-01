@@ -746,18 +746,27 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
   for (const event of parsed.events) {
     try {
       if (event.type === 'follow') {
-        // Friend added
         const lineUserId = event.source?.userId;
         if (lineUserId) {
-          await upsertFriend(env.DB, { lineUserId, displayName: null });
+          // Check if friend already exists
+          const existing = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first();
+          if (existing) {
+            await env.DB.prepare("UPDATE friends SET is_following = 1, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
+          } else {
+            const id = crypto.randomUUID();
+            const now = new Date().toISOString();
+            // Use first tenant from DB as default (line_accounts don't have tenant_id yet)
+            const tenants = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
+            const tenantId = tenants?.id || null;
+            await env.DB.prepare(
+              'INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)'
+            ).bind(id, tenantId, lineUserId, lineUserId, 'active', 1, 0, now, now).run();
+          }
         }
       } else if (event.type === 'unfollow') {
-        // Friend unfollowed — mark as not following
         const lineUserId = event.source?.userId;
         if (lineUserId) {
-          await env.DB.prepare(
-            "UPDATE friends SET is_following = 0, updated_at = datetime('now') WHERE line_user_id = ?"
-          ).bind(lineUserId).run();
+          await env.DB.prepare("UPDATE friends SET is_following = 0, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
         }
       }
     } catch (e) {
