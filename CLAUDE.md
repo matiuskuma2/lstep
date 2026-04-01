@@ -169,6 +169,36 @@ When in UI stabilization/smoke-test phase:
 - 1 Issue → 1 PR → 1 merge → 1 staging verify → next
 - All pending feature PRs for UI are frozen until stabilization completes
 
+## Pre-Implementation Audit Gate (MANDATORY)
+
+Before any implementation task is handed to Codex or executed directly:
+
+### Required audit items (all must be filled)
+1. **Dependency manifest** — packages, utility files, unresolved imports
+2. **Required files manifest** — existing files needed, new files, deletions
+3. **Route manifest** — target routes, ownership, source of truth
+4. **Schema diff** — existing table vs intended changes, conflicts
+5. **Live schema check** — actual D1 columns via `/api/debug/schema`
+6. **Smoke test** — URL, API, DB evidence, PASS/FAIL criteria
+
+### Rules
+- If any audit item is missing, **do not implement**
+- Never treat `CREATE TABLE IF NOT EXISTS` as proof of schema compatibility
+- Always compare intended SQL against live DB columns before writing migrations
+- Always confirm column existence before using in INSERT/UPDATE
+- Never bulk-import a feature set — 1 integration = 1 feature
+- Before removing imports or routes, create a remove/disable manifest
+
+### Migration safety
+- Run `/api/debug/schema` before writing any ALTER TABLE or INSERT
+- Each ALTER TABLE should be a single column per migration file
+- If migration fails with "duplicate column", the column already exists — skip it
+
+### Integration safety
+- Use approach B: LINE Harness DB adapters only, own route handlers
+- Do not mount LINE Harness Hono routes (broken ../index.js imports)
+- Always confirm tenant_id source of truth before saving records
+
 ## Definition of Done
 
 A task is not done unless:

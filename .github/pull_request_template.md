@@ -13,6 +13,14 @@ Explain why this change is needed.
 -
 -
 
+## Pre-merge Audit Evidence
+- [ ] dependency manifest に沿っている
+- [ ] required files manifest に沿っている
+- [ ] schema diff を `/api/debug/schema` で確認した
+- [ ] 対象外ファイルに変更がない
+- [ ] 既存 route を壊していない
+- [ ] migration 前に live schema check 済み
+
 ## Risk Check
 - [ ] Does not break production delivery logic
 - [ ] No direct DB updates added
