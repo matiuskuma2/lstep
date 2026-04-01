@@ -86,6 +86,10 @@ code { background: #f5f5f5; padding: 2px 6px; border-radius: 4px; font-size: 12p
       <span class="logout" onclick="logout()">\u30ed\u30b0\u30a2\u30a6\u30c8</span>
     </div>
   </div>
+  <div id="tenantBar" style="display:none;padding:8px 24px;background:#fff3e0;border-bottom:1px solid #ffe0b2;font-size:13px;color:#e65100;align-items:center;gap:8px">
+    <span>&#x26a0; Super Admin: \u64cd\u4f5c\u5bfe\u8c61\u30c6\u30ca\u30f3\u30c8\u3092\u9078\u629e</span>
+    <select id="tenantSelect" style="padding:4px 8px;border:1px solid #ddd;border-radius:6px;font-size:13px"><option value="">\u9078\u629e...</option></select>
+  </div>
   <div class="content">
     <script>
 const user = JSON.parse(localStorage.getItem('lchatai_user') || 'null');
@@ -94,8 +98,20 @@ if (!user || !token) { window.location.href = '/login'; }
 if (user) {
   document.getElementById('userName').textContent = user.login_id + ' (' + user.role + ')';
   document.getElementById('tenantName').textContent = user.tenant_id ? 'Tenant: ' + user.tenant_id.substring(0,8) + '...' : 'System';
-  if (user.role === 'super_admin') { document.getElementById('superAdminLink').style.display = 'block'; }
+  if (user.role === 'super_admin') {
+    document.getElementById('superAdminLink').style.display = 'block';
+    const bar = document.getElementById('tenantBar');
+    if (bar) {
+      bar.style.display = 'flex';
+      fetch('/api/admin/tenants', { headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token } })
+        .then(r => r.json()).then(d => {
+          const sel = document.getElementById('tenantSelect');
+          (d.tenants || []).forEach(t => { const o = document.createElement('option'); o.value = t.id; o.textContent = t.name; sel.appendChild(o); });
+        }).catch(() => {});
+    }
+  }
 }
+function getSelectedTenantId() { const sel = document.getElementById('tenantSelect'); return sel ? sel.value : ''; }
 function authHeaders() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }; }
 function logout() { localStorage.removeItem('lchatai_token'); localStorage.removeItem('lchatai_user'); window.location.href = '/login'; }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }

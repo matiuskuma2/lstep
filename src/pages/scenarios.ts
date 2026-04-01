@@ -73,7 +73,7 @@ export function getScenariosPageHtml(): string {
       const desc=document.getElementById('scenarioDesc').value;
       if(!name){er.textContent='\u30b7\u30ca\u30ea\u30aa\u540d\u306f\u5fc5\u9808';er.style.display='block';return;}
       try {
-        const r=await fetch('/api/scenarios',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,trigger_type:trigger,description:desc||undefined})});
+        const r=await fetch('/api/scenarios',{method:'POST',headers:authHeaders(),body:JSON.stringify({name,trigger_type:trigger,description:desc||undefined,tenant_id:getSelectedTenantId()||undefined})});
         const d=await r.json();
         if(d.status==='ok'){su.textContent='\u4f5c\u6210\u3057\u307e\u3057\u305f';su.style.display='block';document.getElementById('scenarioName').value='';document.getElementById('scenarioDesc').value='';loadScenarios();}
         else{er.textContent=d.message;er.style.display='block';}
