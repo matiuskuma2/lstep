@@ -125,6 +125,19 @@ export function getKnowledgePageHtml(): string {
         <tbody id="kList"><tr><td colspan="6">\u8aad\u307f\u8fbc\u307f\u4e2d...</td></tr></tbody>
       </table>
     </div>
+    <div id="editModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:100;justify-content:center;align-items:center">
+      <div style="background:white;border-radius:12px;padding:24px;max-width:600px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.2)">
+        <h3 style="margin-bottom:16px;color:#333" id="editModalTitle">Knowledge\u7de8\u96c6</h3>
+        <div style="margin-bottom:12px"><label style="font-size:13px;color:#333;display:block;margin-bottom:4px">\u30bf\u30a4\u30c8\u30eb</label><input type="text" id="editTitle" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box"></div>
+        <div style="margin-bottom:12px"><label style="font-size:13px;color:#333;display:block;margin-bottom:4px">\u30ab\u30c6\u30b4\u30ea</label><select id="editCategory" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none"><option value="general">\u4e00\u822c</option><option value="product">\u88fd\u54c1</option><option value="faq">FAQ</option><option value="policy">\u30dd\u30ea\u30b7\u30fc</option></select></div>
+        <div style="margin-bottom:12px"><label style="font-size:13px;color:#333;display:block;margin-bottom:4px">\u5185\u5bb9</label><textarea id="editContent" style="width:100%;min-height:150px;padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:13px;outline:none;resize:vertical;box-sizing:border-box;font-family:inherit"></textarea></div>
+        <div class="msg error" id="editErr" style="margin-bottom:12px"></div>
+        <div style="display:flex;gap:12px;justify-content:flex-end">
+          <button class="btn" style="background:#eee;color:#333" onclick="closeEditModal()">\u30ad\u30e3\u30f3\u30bb\u30eb</button>
+          <button class="btn btn-primary" id="editSaveBtn" onclick="saveEdit()">\u4fdd\u5b58</button>
+        </div>
+      </div>
+    </div>
     <script>
     async function loadKnowledge() {
       try {
@@ -149,18 +162,39 @@ export function getKnowledgePageHtml(): string {
         else{er.textContent=d.message||'\u4f5c\u6210\u5931\u6557';er.style.display='block';}
       }catch(e){er.textContent=e.message;er.style.display='block';}
     }
+    let editingId = null;
     async function editKnowledge(id, title, category) {
-      const newTitle = prompt('\u30bf\u30a4\u30c8\u30eb:', title);
-      if (newTitle === null) return;
-      const newContent = prompt('\u5185\u5bb9\u3092\u5165\u529b:');
-      if (newContent === null) return;
+      editingId = id;
+      document.getElementById('editTitle').value = title;
+      document.getElementById('editCategory').value = category;
+      document.getElementById('editContent').value = '';
+      document.getElementById('editErr').style.display = 'none';
+      document.getElementById('editModal').style.display = 'flex';
+      // Load full content
       try {
-        const body = { title: newTitle };
-        if (newContent) body.content = newContent;
-        const r = await fetch('/api/knowledge/' + id, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(body) });
+        const d = await fetchJson('/api/knowledge');
+        const item = (d.knowledge || []).find(k => k.id === id);
+        if (item) { document.getElementById('editContent').value = item.content; }
+      } catch(e) {}
+    }
+    function closeEditModal() { editingId = null; document.getElementById('editModal').style.display = 'none'; }
+    async function saveEdit() {
+      if (!editingId) return;
+      const er = document.getElementById('editErr');
+      er.style.display = 'none';
+      const title = document.getElementById('editTitle').value;
+      const content = document.getElementById('editContent').value;
+      const category = document.getElementById('editCategory').value;
+      if (!title) { er.textContent = '\u30bf\u30a4\u30c8\u30eb\u306f\u5fc5\u9808'; er.style.display = 'block'; return; }
+      const btn = document.getElementById('editSaveBtn');
+      btn.disabled = true; btn.textContent = '\u4fdd\u5b58\u4e2d...';
+      try {
+        const r = await fetch('/api/knowledge/' + editingId, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ title, content, category }) });
         const d = await r.json();
-        if (d.status === 'ok') { loadKnowledge(); } else { alert(d.message || '\u66f4\u65b0\u5931\u6557'); }
-      } catch(e) { alert(e.message); }
+        if (d.status === 'ok') { closeEditModal(); loadKnowledge(); }
+        else { er.textContent = d.message || '\u66f4\u65b0\u5931\u6557'; er.style.display = 'block'; }
+      } catch(e) { er.textContent = e.message; er.style.display = 'block'; }
+      btn.disabled = false; btn.textContent = '\u4fdd\u5b58';
     }
     async function deleteKnowledge(id, title) {
       if (!confirm('\u300c' + title + '\u300d\u3092\u524a\u9664\u3057\u307e\u3059\u304b\uff1f')) return;
