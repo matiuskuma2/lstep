@@ -98,14 +98,46 @@ app.post('/webhook', async (c) => {
       } catch {}
 
       if (event.type === 'follow' && lineUserId) {
-        const existing = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first();
-        if (existing) {
-          await env.DB.prepare("UPDATE friends SET is_following = 1, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
-        } else {
-          const id = crypto.randomUUID();
-          const now = new Date().toISOString();
-          const tenant = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
-          await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, lineUserId, lineUserId, 'active', 1, 0, now, now).run();
+        // Get display name from LINE Profile API
+        let displayName = lineUserId;
+        try {
+          const profileRes = await fetch('https://api.line.me/v2/bot/profile/' + lineUserId, {
+            headers: { 'Authorization': 'Bearer ' + matchedAccount.channel_access_token }
+          });
+          if (profileRes.ok) {
+            const profile = await profileRes.json() as { displayName?: string; pictureUrl?: string; statusMessage?: string };
+            displayName = profile.displayName || lineUserId;
+            // Also save picture_url and status_message if available
+            const existing = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first();
+            if (existing) {
+              await env.DB.prepare("UPDATE friends SET display_name = ?, picture_url = ?, status_message = ?, is_following = 1, updated_at = datetime('now') WHERE line_user_id = ?").bind(displayName, profile.pictureUrl || null, profile.statusMessage || null, lineUserId).run();
+            } else {
+              const id = crypto.randomUUID();
+              const now = new Date().toISOString();
+              const tenant = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
+              await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, picture_url, status_message, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, displayName, lineUserId, profile.pictureUrl || null, profile.statusMessage || null, 'active', 1, 0, now, now).run();
+            }
+          } else {
+            // Profile API failed, save with userId as name
+            const existing = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first();
+            if (existing) {
+              await env.DB.prepare("UPDATE friends SET is_following = 1, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
+            } else {
+              const id = crypto.randomUUID();
+              const now = new Date().toISOString();
+              const tenant = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
+              await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, lineUserId, lineUserId, 'active', 1, 0, now, now).run();
+            }
+          }
+        } catch (profileErr) {
+          // Fallback: save with userId
+          const existing = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first();
+          if (!existing) {
+            const id = crypto.randomUUID();
+            const now = new Date().toISOString();
+            const tenant = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
+            await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, lineUserId, lineUserId, 'active', 1, 0, now, now).run();
+          }
         }
         // Debug: confirm save
         try {
