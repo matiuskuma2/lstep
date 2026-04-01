@@ -5,9 +5,9 @@ import {
   createBroadcast,
   updateBroadcast,
   deleteBroadcast,
-} from '@line-crm/db';
-import type { Broadcast as DbBroadcast, BroadcastMessageType, BroadcastTargetType } from '@line-crm/db';
-import { LineClient } from '@line-crm/line-sdk';
+} from '../db/index.js';
+import type { Broadcast as DbBroadcast, BroadcastMessageType, BroadcastTargetType } from '../db/index.js';
+import { LineClient } from '../line-sdk/index.js';
 import { processBroadcastSend } from '../services/broadcast.js';
 import { processSegmentSend } from '../services/segment-send.js';
 import type { SegmentCondition } from '../services/segment-query.js';

@@ -10,8 +10,8 @@
  * - token_expires_at is NULL (legacy, unknown expiry — refresh once to start tracking)
  */
 
-import { getLineAccounts, updateLineAccount } from '@line-crm/db';
-import type { LineAccount } from '@line-crm/db';
+import { getLineAccounts, updateLineAccount } from '../db/index.js';
+import type { LineAccount } from '../db/index.js';
 
 const REFRESH_THRESHOLD_MS = 7 * 24 * 60 * 60_000; // 7 days
 const JST_OFFSET_MS = 9 * 60 * 60_000;

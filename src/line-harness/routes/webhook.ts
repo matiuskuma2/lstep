@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { verifySignature, LineClient } from '@line-crm/line-sdk';
-import type { WebhookRequestBody, WebhookEvent, TextEventMessage } from '@line-crm/line-sdk';
+import { verifySignature, LineClient } from '../line-sdk/index.js';
+import type { WebhookRequestBody, WebhookEvent, TextEventMessage } from '../line-sdk/index.js';
 import {
   upsertFriend,
   updateFriendFollowStatus,
@@ -13,7 +13,7 @@ import {
   upsertChatOnMessage,
   getLineAccounts,
   jstNow,
-} from '@line-crm/db';
+} from '../db/index.js';
 import { fireEvent } from '../services/event-bus.js';
 import { buildMessage, expandVariables } from '../services/step-delivery.js';
 import type { Env } from '../index.js';

@@ -13,8 +13,8 @@ import {
   completeReminderIfDone,
   getFriendById,
   jstNow,
-} from '@line-crm/db';
-import type { LineClient, Message } from '@line-crm/line-sdk';
+} from '../db/index.js';
+import type { LineClient, Message } from '../line-sdk/index.js';
 import { addJitter, sleep } from './stealth.js';
 
 export async function processReminderDeliveries(

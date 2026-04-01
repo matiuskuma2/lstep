@@ -9,8 +9,8 @@ import {
   getScenarios,
   enrollFriendInScenario,
   jstNow,
-} from '@line-crm/db';
-import type { Friend as DbFriend, Tag as DbTag } from '@line-crm/db';
+} from '../db/index.js';
+import type { Friend as DbFriend, Tag as DbTag } from '../db/index.js';
 import { fireEvent } from '../services/event-bus.js';
 import { buildMessage } from '../services/step-delivery.js';
 import type { Env } from '../index.js';
@@ -319,11 +319,11 @@ friends.post('/api/friends/:id/messages', async (c) => {
       return c.json({ success: false, error: 'Friend not found' }, 404);
     }
 
-    const { LineClient } = await import('@line-crm/line-sdk');
+    const { LineClient } = await import('../line-sdk/index.js');
     // Resolve access token from friend's account (multi-account support)
     let accessToken = c.env.LINE_CHANNEL_ACCESS_TOKEN;
     if ((friend as unknown as Record<string, unknown>).line_account_id) {
-      const { getLineAccountById } = await import('@line-crm/db');
+      const { getLineAccountById } = await import('../db/index.js');
       const account = await getLineAccountById(db, (friend as unknown as Record<string, unknown>).line_account_id as string);
       if (account) accessToken = account.channel_access_token;
     }

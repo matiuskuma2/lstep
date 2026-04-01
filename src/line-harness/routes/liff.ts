@@ -11,7 +11,7 @@ import {
   getLineAccountByChannelId,
   getLineAccounts,
   jstNow,
-} from '@line-crm/db';
+} from '../db/index.js';
 import type { Env } from '../index.js';
 
 const liffRoutes = new Hono<Env>();
@@ -400,8 +400,8 @@ liffRoutes.get('/auth/callback', async (c) => {
 
     // Auto-enroll in friend_add scenarios + immediate delivery (skip delivery window)
     try {
-      const { getScenarios, enrollFriendInScenario: enroll, getScenarioSteps } = await import('@line-crm/db');
-      const { LineClient } = await import('@line-crm/line-sdk');
+      const { getScenarios, enrollFriendInScenario: enroll, getScenarioSteps } = await import('../db/index.js');
+      const { LineClient } = await import('../line-sdk/index.js');
       const { buildMessage, expandVariables } = await import('../services/step-delivery.js');
 
       // Resolve which account this friend belongs to
@@ -993,14 +993,14 @@ async function applyXHarnessActions(
         .first<{ id: string }>();
       if (!tagRow) {
         const tagId = crypto.randomUUID();
-        const { jstNow } = await import('@line-crm/db');
+        const { jstNow } = await import('../db/index.js');
         tagRow = await db
           .prepare('INSERT INTO tags (id, name, created_at) VALUES (?, ?, ?) RETURNING id')
           .bind(tagId, result.tag, jstNow())
           .first<{ id: string }>();
       }
       if (tagRow) {
-        const { addTagToFriend } = await import('@line-crm/db');
+        const { addTagToFriend } = await import('../db/index.js');
         await addTagToFriend(db, friendId, tagRow.id);
         console.log(`X Harness: added tag "${result.tag}" to friend ${friendId}`);
       }
@@ -1012,7 +1012,7 @@ async function applyXHarnessActions(
   // Start scenario if specified
   if (result.scenarioId) {
     try {
-      const { enrollFriendInScenario } = await import('@line-crm/db');
+      const { enrollFriendInScenario } = await import('../db/index.js');
       await enrollFriendInScenario(db, friendId, result.scenarioId);
       console.log(`X Harness: enrolled friend ${friendId} in scenario ${result.scenarioId}`);
     } catch (err) {

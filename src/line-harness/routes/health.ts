@@ -6,7 +6,7 @@ import {
   getAccountMigrationById,
   createAccountMigration,
   updateAccountMigration,
-} from '@line-crm/db';
+} from '../db/index.js';
 import type { Env } from '../index.js';
 
 const health = new Hono<Env>();

@@ -5,7 +5,7 @@ import {
   createTemplate,
   updateTemplate,
   deleteTemplate,
-} from '@line-crm/db';
+} from '../db/index.js';
 import type { Env } from '../index.js';
 
 const templates = new Hono<Env>();

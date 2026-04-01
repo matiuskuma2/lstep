@@ -8,7 +8,7 @@ import {
   getFriendScore,
   getFriendScoreHistory,
   addScore,
-} from '@line-crm/db';
+} from '../db/index.js';
 import type { Env } from '../index.js';
 
 const scoring = new Hono<Env>();

@@ -5,10 +5,10 @@ import {
   updateBroadcastStatus,
   getFriendsByTag,
   jstNow,
-} from '@line-crm/db';
-import type { Broadcast } from '@line-crm/db';
-import type { LineClient } from '@line-crm/line-sdk';
-import type { Message } from '@line-crm/line-sdk';
+} from '../db/index.js';
+import type { Broadcast } from '../db/index.js';
+import type { LineClient } from '../line-sdk/index.js';
+import type { Message } from '../line-sdk/index.js';
 import { calculateStaggerDelay, sleep, addMessageVariation } from './stealth.js';
 
 const MULTICAST_BATCH_SIZE = 500;

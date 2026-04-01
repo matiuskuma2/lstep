@@ -8,7 +8,7 @@
 import {
   getLineAccounts,
   createAccountHealthLog,
-} from '@line-crm/db';
+} from '../db/index.js';
 
 export async function checkAccountHealth(
   db: D1Database,

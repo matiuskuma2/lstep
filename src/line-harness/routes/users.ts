@@ -9,8 +9,8 @@ import {
   getUserFriends,
   getUserByEmail,
   getUserByPhone,
-} from '@line-crm/db';
-import type { User as DbUser } from '@line-crm/db';
+} from '../db/index.js';
+import type { User as DbUser } from '../db/index.js';
 import type { Env } from '../index.js';
 
 const users = new Hono<Env>();
