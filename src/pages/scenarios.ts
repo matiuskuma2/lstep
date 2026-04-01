@@ -83,21 +83,26 @@ export function getScenariosPageHtml(): string {
     async function showDetail(id) {
       currentScenarioId = id;
       try {
-        const [sr, str] = await Promise.all([
-          fetch('/api/scenarios/'+id, {headers:authHeaders()}),
-          fetch('/api/scenarios/'+id+'/steps', {headers:authHeaders()})
-        ]);
-        const sd = await sr.json();
-        const std = await str.json();
-        const s = sd.scenario;
-        document.getElementById('detailTitle').textContent = s.name;
-        document.getElementById('detailInfo').innerHTML = '<span class="badge badge-active">'+s.trigger_type+'</span> <span class="badge '+(s.status==='active'?'badge-active':'badge-admin')+'">'+s.status+'</span>' + (s.description ? '<p style="margin-top:8px;font-size:13px;color:#666">'+esc(s.description)+'</p>' : '');
-        const steps = std.steps || [];
+        const sr = await fetchJson('/lh/api/scenarios/' + id);
+        const str = await fetchJson('/lh/api/scenarios/' + id + '/steps');
+        const s = sr.data || sr.scenario || sr;
+        document.getElementById('detailTitle').textContent = s.name || id;
+        document.getElementById('detailInfo').innerHTML = '<span class="badge badge-active">'+(s.triggerType||s.trigger_type||'-')+'</span> <span class="badge '+(s.isActive||s.status==='active'?'badge-active':'badge-admin')+'">'+(s.isActive!==undefined?(s.isActive?'active':'draft'):(s.status||'draft'))+'</span> <button class="btn" style="padding:2px 8px;font-size:11px;background:#ffebee;color:#c62828;border:none;border-radius:4px;cursor:pointer;margin-left:8px" onclick="deleteScenario()">削除</button>';
+        const steps = str.data || str.steps || [];
         if(steps.length===0){document.getElementById('stepList').innerHTML='<tr><td colspan="5" style="color:#999">\u30b9\u30c6\u30c3\u30d7\u306a\u3057</td></tr>';}
-        else{document.getElementById('stepList').innerHTML=steps.map(st=>'<tr><td>'+st.step_order+'</td><td>'+st.delay_minutes+'</td><td>'+st.message_type+'</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(st.message_content)+'</td><td>'+(st.goal_label||'-')+'</td></tr>').join('');}
+        else{document.getElementById('stepList').innerHTML=steps.map(function(st){return '<tr><td>'+(st.stepOrder||st.step_order)+'</td><td>'+(st.delayMinutes||st.delay_minutes||0)+'</td><td>'+(st.messageType||st.message_type||'text')+'</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">'+esc(st.messageContent||st.message_content)+'</td><td>'+(st.goalLabel||st.goal_label||'-')+'</td></tr>'}).join('');}
         document.getElementById('detailPanel').style.display='block';
         document.getElementById('stepOrder').value = steps.length+1;
-      }catch(e){console.error(e);}
+      }catch(e){alert('詳細の取得に失敗: '+e.message);}
+    }
+    async function deleteScenario() {
+      if(!currentScenarioId) return;
+      if(!confirm('このシナリオを削除しますか？')) return;
+      try {
+        const r = await fetch('/api/scenarios/'+currentScenarioId, {method:'DELETE', headers:authHeaders()});
+        if(r.ok || r.status === 200) { document.getElementById('detailPanel').style.display='none'; loadScenarios(); }
+        else { alert('削除に失敗しました'); }
+      } catch(e) { alert('エラー: '+e.message); }
     }
     async function addStep() {
       const er=document.getElementById('stepError'),su=document.getElementById('stepSuccess');
