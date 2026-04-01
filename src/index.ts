@@ -181,23 +181,27 @@ app.post('/webhook', async (c) => {
             }
             const firstStep = await env.DB.prepare('SELECT message_content FROM scenario_steps WHERE scenario_id = ? AND step_order = 1 LIMIT 1').bind(scenario.id).first<{message_content: string}>();
             if (firstStep) {
-              fetch('https://api.line.me/v2/bot/message/push', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + matchedAccount.channel_access_token },
-                body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text: firstStep.message_content }] }),
-              }).catch(() => {});
+              c.executionCtx.waitUntil(
+                fetch('https://api.line.me/v2/bot/message/push', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + matchedAccount.channel_access_token },
+                  body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text: firstStep.message_content }] }),
+                }).catch(() => {})
+              );
             }
           }
         } catch {}
 
-        // Profile update (fire-and-forget, non-blocking)
-        fetch('https://api.line.me/v2/bot/profile/' + lineUserId, {
-          headers: { 'Authorization': 'Bearer ' + matchedAccount.channel_access_token }
+        // Profile update (waitUntil ensures it completes after response)
+        c.executionCtx.waitUntil(
+          fetch('https://api.line.me/v2/bot/profile/' + lineUserId, {
+            headers: { 'Authorization': 'Bearer ' + matchedAccount.channel_access_token }
         }).then(r => r.ok ? r.json() : null).then(p => {
           if (p && p.displayName) {
             env.DB.prepare("UPDATE friends SET display_name = ? WHERE line_user_id = ?").bind(p.displayName, lineUserId).run();
           }
-        }).catch(() => {});
+        }).catch(() => {})
+        );
 
         try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'SAVED: name=' + displayName + ' existing=' + !!existing, 'webhook_debug').run(); } catch {}
 
