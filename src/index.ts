@@ -25,6 +25,7 @@ import { FormAdapter } from './adapters/form';
 import { BotAdapter, KnowledgeAdapter } from './adapters/bot-knowledge';
 import { getBotsPageHtml, getKnowledgePageHtml } from './pages/bot-knowledge';
 import { getAiLogsPageHtml } from './pages/ai-logs';
+import { getLineAccountsPageHtml } from './pages/line-accounts';
 
 // LINE Harness OSS routes
 import { webhook } from './line-harness/routes/webhook.js';
@@ -60,6 +61,7 @@ import { checkAccountHealth } from './line-harness/services/ban-monitor.js';
 import { refreshLineAccessTokens } from './line-harness/services/token-refresh.js';
 import { getLineAccounts } from './line-harness/db/index.js';
 import { LineClient } from './line-harness/line-sdk/index.js';
+import { createLineAccount, getLineAccounts as getLineAccountsList, updateLineAccount, deleteLineAccount } from './line-harness/db/line-accounts.js';
 
 export interface Env {
   DB: D1Database;
@@ -159,6 +161,8 @@ app.all('*', async (c) => {
         response = await handleKnowledge(request, env);
       } else if (url.pathname === '/api/scenarios' || url.pathname.startsWith('/api/scenarios/')) {
         response = await handleScenarios(request, url, env);
+      } else if (url.pathname === '/api/line-accounts' || url.pathname.startsWith('/api/line-accounts/')) {
+        response = await handleLineAccounts(request, url, env);
       } else if (url.pathname === '/api/ai/logs') {
         response = await handleAiLogs(request, env);
       } else if (url.pathname === '/api/ai/test') {
@@ -197,6 +201,8 @@ app.all('*', async (c) => {
         response = new Response(getKnowledgePageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/ai-logs') {
         response = new Response(getAiLogsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      } else if (url.pathname === '/dashboard/line-accounts') {
+        response = new Response(getLineAccountsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/setup') {
         response = new Response(getSetupHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else {
@@ -706,6 +712,63 @@ async function handleAiChatRoute(request: Request, url: URL, env: Env): Promise<
   if (request.method === 'POST') return handleAiChat(request, env);
   return Response.json({ error: 'method not allowed' }, { status: 405 });
 }
+// --- LINE Accounts ---
+async function handleLineAccounts(request: Request, url: URL, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+
+  // GET /api/line-accounts
+  if (url.pathname === '/api/line-accounts' && request.method === 'GET') {
+    const accounts = await getLineAccountsList(env.DB);
+    return Response.json({ status: 'ok', accounts });
+  }
+  // POST /api/line-accounts
+  if (url.pathname === '/api/line-accounts' && request.method === 'POST') {
+    let body: any;
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    if (!body.channel_id || !body.name || !body.channel_access_token || !body.channel_secret) {
+      return Response.json({ status: 'error', message: 'channel_id, name, channel_access_token, channel_secret are required' }, { status: 400 });
+    }
+    try {
+      const account = await createLineAccount(env.DB, {
+        channelId: body.channel_id,
+        name: body.name,
+        channelAccessToken: body.channel_access_token,
+        channelSecret: body.channel_secret,
+      });
+      return Response.json({ status: 'ok', account }, { status: 201 });
+    } catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
+  }
+
+  // /api/line-accounts/:id
+  const segments = url.pathname.split('/');
+  const accountId = segments[3];
+  if (!accountId) return Response.json({ error: 'missing id' }, { status: 400 });
+
+  // DELETE /api/line-accounts/:id
+  if (request.method === 'DELETE') {
+    try { await deleteLineAccount(env.DB, accountId); return Response.json({ status: 'ok' }); }
+    catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
+  }
+  // PATCH /api/line-accounts/:id
+  if (request.method === 'PATCH') {
+    let body: any;
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    try {
+      const account = await updateLineAccount(env.DB, accountId, {
+        name: body.name,
+        channel_access_token: body.channel_access_token,
+        channel_secret: body.channel_secret,
+        is_active: body.is_active,
+      });
+      return Response.json({ status: 'ok', account });
+    } catch (err) { return Response.json({ status: 'error', message: String(err) }, { status: 400 }); }
+  }
+  return Response.json({ error: 'method not allowed' }, { status: 405 });
+}
+
 async function handleAiLogs(request: Request, env: Env): Promise<Response> {
   if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
   const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
