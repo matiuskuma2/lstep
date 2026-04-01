@@ -3,7 +3,6 @@ name: Deploy Worker
 on:
   push:
     branches:
-      - main
       - staging
   workflow_dispatch:
     inputs:
