@@ -125,7 +125,7 @@ app.post('/webhook', async (c) => {
         try {
           const friend = await env.DB.prepare('SELECT id, tenant_id FROM friends WHERE line_user_id = ?').bind(lineUserId).first<{id: string; tenant_id: string}>();
           if (friend) {
-            const scenarios = await env.DB.prepare("SELECT id FROM scenarios WHERE trigger_type = 'friend_add' AND status = 'active' AND tenant_id = ?").bind(friend.tenant_id).all<{id: string}>();
+            const scenarios = await env.DB.prepare("SELECT id FROM scenarios WHERE trigger_type = 'friend_add' AND status IN ('active', 'draft') AND tenant_id = ?").bind(friend.tenant_id).all<{id: string}>();
             for (const scenario of (scenarios.results || [])) {
               // Check if already enrolled
               const enrolled = await env.DB.prepare('SELECT id FROM friend_scenarios WHERE friend_id = ? AND scenario_id = ?').bind(friend.id, scenario.id).first();
@@ -184,8 +184,12 @@ app.all('*', async (c) => {
         const friends = await env.DB.prepare('SELECT id, tenant_id, display_name, line_user_id, status, is_following FROM friends ORDER BY created_at DESC LIMIT 10').all();
         const accounts = await env.DB.prepare('SELECT id, channel_id, name, is_active FROM line_accounts ORDER BY created_at DESC LIMIT 10').all();
         const tenants = await env.DB.prepare('SELECT id, name FROM tenants ORDER BY created_at DESC LIMIT 5').all();
-        const webhookLogs = await env.DB.prepare("SELECT id, request_message, intent, created_at FROM ai_execution_logs WHERE intent = 'webhook_debug' ORDER BY created_at DESC LIMIT 20").all();
-        response = Response.json({ friends: friends.results, line_accounts: accounts.results, tenants: tenants.results, webhook_logs: webhookLogs.results });
+        const scenarios = await env.DB.prepare('SELECT id, tenant_id, name, trigger_type, status FROM scenarios ORDER BY created_at DESC LIMIT 10').all();
+        const scenarioSteps = await env.DB.prepare('SELECT id, scenario_id, step_order, delay_minutes, message_content FROM scenario_steps ORDER BY scenario_id, step_order LIMIT 20').all();
+        const enrollments = await env.DB.prepare('SELECT id, friend_id, scenario_id, current_step_order, status, next_delivery_at FROM friend_scenarios ORDER BY started_at DESC LIMIT 10').all();
+        const messagesLog = await env.DB.prepare('SELECT id, friend_id, direction, message_type, content, scenario_step_id, created_at FROM messages_log ORDER BY created_at DESC LIMIT 10').all();
+        const webhookLogs = await env.DB.prepare("SELECT id, request_message, intent, created_at FROM ai_execution_logs WHERE intent = 'webhook_debug' ORDER BY created_at DESC LIMIT 10").all();
+        response = Response.json({ friends: friends.results, line_accounts: accounts.results, tenants: tenants.results, scenarios: scenarios.results, scenario_steps: scenarioSteps.results, enrollments: enrollments.results, messages_log: messagesLog.results, webhook_logs: webhookLogs.results });
       } else if (url.pathname === '/health') {
         response = Response.json({ status: 'ok', environment: env.ENVIRONMENT, timestamp: new Date().toISOString() });
       } else if (url.pathname === '/') {
