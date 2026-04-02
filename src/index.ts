@@ -375,6 +375,11 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
         response = await handleEntryRoutes(request, url, env);
       } else if (url.pathname === '/api/tracked-links') {
         response = await handleTrackedLinks(request, env);
+      } else if (url.pathname.startsWith('/r/')) {
+        const ref = url.pathname.replace('/r/', '');
+        const lineAccount = await env.DB.prepare('SELECT channel_id FROM line_accounts WHERE is_active = 1 LIMIT 1').first<{channel_id: string}>();
+        const lineUrl = lineAccount ? 'https://line.me/R/ti/p/@' + lineAccount.channel_id : '#';
+        response = new Response(`<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LINE Harness</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Hiragino Sans',system-ui,sans-serif;background:#0d1117;color:#fff;display:flex;justify-content:center;align-items:center;min-height:100vh}.card{text-align:center;max-width:400px;width:90%;padding:48px 24px}h1{font-size:28px;font-weight:800;margin-bottom:8px}.sub{font-size:14px;color:rgba(255,255,255,0.5);margin-bottom:40px}.btn{display:block;width:100%;padding:18px;border:none;border-radius:12px;font-size:18px;font-weight:700;text-decoration:none;text-align:center;color:#fff;background:#06C755}.note{font-size:12px;color:rgba(255,255,255,0.3);margin-top:24px;line-height:1.6}</style></head><body><div class="card"><h1>lchatAI</h1><p class="sub">流入元: ${ref}</p><a href="${lineUrl}" class="btn">LINEで友だち追加する</a><p class="note">友だち追加するだけで体験できます</p></div></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname.startsWith('/t/')) {
         response = await handleRedirect(request, url, env);
       } else if (url.pathname === '/chat') {
