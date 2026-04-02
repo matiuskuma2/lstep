@@ -52,7 +52,7 @@ export function getScenariosPageHtml(): string {
     function toggleCreate() { const f=document.getElementById('createForm'); f.style.display=f.style.display==='none'?'block':'none'; }
     async function loadScenarios() {
       try {
-        const d = await fetchJson('/lh/api/scenarios');
+        const d = await fetchJson('/lh/api/scenarios?_t=' + Date.now());
         allScenarios = d.data || d.scenarios || [];
         const items = d.data || d.scenarios || [];
         showList('scenarioList', items, 5, '\u30b7\u30ca\u30ea\u30aa\u304c\u3042\u308a\u307e\u305b\u3093', list =>
