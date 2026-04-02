@@ -41,9 +41,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .measurement-label{color:#7b1fa2;font-weight:500}
 .question-item{font-size:13px;color:#bf360c;padding:3px 0;cursor:pointer}
 .question-item:hover{text-decoration:underline}
-.execute-btn{display:inline-block;margin-top:12px;padding:10px 24px;background:#06C755;color:white;border:none;border-radius:24px;font-size:15px;font-weight:600;cursor:pointer}
-.execute-btn:hover{background:#05a648}
-.execute-btn:disabled{background:#ccc;cursor:default}
 .intent-badge{display:inline-block;background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}
 .input-area{padding:12px 16px;background:white;border-top:1px solid #e0e0e0;display:flex;gap:8px}
 .input-area input{flex:1;padding:10px 14px;border:1px solid #ddd;border-radius:24px;font-size:14px;outline:none}
@@ -55,9 +52,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .loading span:nth-child(2){animation-delay:.2s}
 .loading span:nth-child(3){animation-delay:.4s}
 @keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-8px)}}
-.result-card{margin-top:8px;border:1px solid #c8e6c9;border-radius:12px;background:#e8f5e9;padding:12px 14px}
-.result-item{font-size:13px;padding:3px 0;color:#2e7d32}
-.result-item a{color:#1565c0}
 </style>
 </head>
 <body>
@@ -92,7 +86,6 @@ var msgInput = document.getElementById('msgInput');
 var sendBtn = document.getElementById('sendBtn');
 var userInfoEl = document.getElementById('userInfo');
 var conversationHistory = [];
-var lastProposal = null;
 
 var user = JSON.parse(localStorage.getItem('lchatai_user') || 'null');
 if (user) { userInfoEl.textContent = user.login_id + ' [logout]'; }
@@ -194,11 +187,11 @@ function addProposalMsg(d) {
     h += '</div>';
   }
 
-  // Execute button
+  // Status indicator (preview-only, no mutation)
   if (d.is_ready && d.proposal) {
-    h += '<button class="execute-btn" onclick="executePlan()">&#x2705; この内容で作成する</button>';
+    h += '<div style="margin-top:8px;padding:8px 14px;background:#e8f5e9;border-radius:8px;font-size:13px;color:#2e7d32">&#x2705; 提案が完成しました。管理画面からシナリオを作成できます。<br><a href="/dashboard/scenarios" style="color:#1565c0">シナリオ管理画面へ</a></div>';
   } else if (d.proposal) {
-    h += '<div style="margin-top:8px;font-size:12px;color:#999">質問に回答するか「OK」「作成して」と送信すると実行できます</div>';
+    h += '<div style="margin-top:8px;font-size:12px;color:#999">質問に回答すると提案が完成します</div>';
   }
 
   e.innerHTML = h;
@@ -235,7 +228,6 @@ async function sendMessage() {
     chatArea.removeChild(le);
 
     if (d.status === 'ok') {
-      lastProposal = d.proposal;
       conversationHistory.push({ role: 'assistant', content: d.display_message || '' });
       addProposalMsg(d);
     } else {
@@ -246,59 +238,6 @@ async function sendMessage() {
     addMsg('Error: ' + err.message, 'ai');
   }
   sendBtn.disabled = false;
-}
-
-async function executePlan() {
-  if (!lastProposal) { addMsg('提案データがありません。', 'ai'); return; }
-
-  var btn = document.querySelector('.execute-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '作成中...'; }
-
-  try {
-    var r = await fetch('/api/ai/execute', {
-      method: 'POST',
-      headers: getHeaders(),
-      body: JSON.stringify({ proposal: lastProposal })
-    });
-    var d = await r.json();
-
-    if (d.status === 'ok') {
-      var e = document.createElement('div');
-      e.className = 'msg ai';
-      var h = '<div class="result-card">';
-      h += '<h4 style="margin-bottom:8px;color:#2e7d32">&#x2705; 作成完了</h4>';
-
-      if (d.scenario) {
-        h += '<div class="result-item">&#x1f4e8; シナリオ: ' + esc(d.scenario.name) + ' (' + d.scenario.steps_count + '通)</div>';
-        h += '<div class="result-item"><a href="/dashboard/scenarios">管理画面で確認</a></div>';
-      }
-      if (d.entry_route) {
-        h += '<div class="result-item">&#x1f6a9; 流入元: ' + esc(d.entry_route.name) + ' (code: ' + esc(d.entry_route.code) + ')</div>';
-        h += '<div class="result-item"><a href="/r/' + esc(d.entry_route.code) + '" target="_blank">友だち追加リンク</a></div>';
-      }
-      if (d.tracked_link) {
-        h += '<div class="result-item">&#x1f517; Tracked Link: <a href="' + esc(d.tracked_link.tracking_url) + '" target="_blank">' + esc(d.tracked_link.tracking_url) + '</a></div>';
-      }
-      if (d.conversion) {
-        h += '<div class="result-item">&#x1f3af; CV: ' + esc(d.conversion.name) + '</div>';
-      }
-
-      h += '</div>';
-      e.innerHTML = h;
-      chatArea.appendChild(e);
-      chatArea.scrollTop = chatArea.scrollHeight;
-
-      // Reset for next conversation
-      lastProposal = null;
-      conversationHistory = [];
-    } else {
-      addMsg('作成失敗: ' + (d.message || ''), 'ai');
-    }
-  } catch (err) {
-    addMsg('エラー: ' + err.message, 'ai');
-  }
-
-  if (btn) { btn.disabled = false; btn.textContent = '\\u2705 この内容で作成する'; }
 }
 
 async function loadBots() {
