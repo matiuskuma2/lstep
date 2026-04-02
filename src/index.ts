@@ -25,6 +25,7 @@ import { FormAdapter } from './adapters/form';
 import { BotAdapter, KnowledgeAdapter } from './adapters/bot-knowledge';
 import { getBotsPageHtml, getKnowledgePageHtml } from './pages/bot-knowledge';
 import { getAiLogsPageHtml } from './pages/ai-logs';
+import { getEntryRoutesPageHtml } from './pages/entry-routes';
 import { getLineAccountsPageHtml } from './pages/line-accounts';
 
 // LINE Harness DB adapters
@@ -370,6 +371,8 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
         response = await handleAiTest(request, env);
       } else if (url.pathname === '/api/ai/chat') {
         response = await handleAiChatRoute(request, url, env);
+      } else if (url.pathname === '/api/entry-routes' || url.pathname.startsWith('/api/entry-routes/')) {
+        response = await handleEntryRoutes(request, url, env);
       } else if (url.pathname === '/api/tracked-links') {
         response = await handleTrackedLinks(request, env);
       } else if (url.pathname.startsWith('/t/')) {
@@ -400,6 +403,8 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
         response = new Response(getBotsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/knowledge') {
         response = new Response(getKnowledgePageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      } else if (url.pathname === '/dashboard/entry-routes') {
+        response = new Response(getEntryRoutesPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/ai-logs') {
         response = new Response(getAiLogsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/line-accounts') {
@@ -1148,6 +1153,35 @@ async function handleAiChat(request: Request, env: Env): Promise<Response> {
 }
 
 // --- Tracked Links ---
+// --- Entry Routes ---
+async function handleEntryRoutes(request: Request, url: URL, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+
+  if (url.pathname === '/api/entry-routes' && request.method === 'GET') {
+    const routes = await env.DB.prepare('SELECT * FROM entry_routes ORDER BY created_at DESC').all();
+    return Response.json({ status: 'ok', entry_routes: routes.results || [] });
+  }
+  if (url.pathname === '/api/entry-routes' && request.method === 'POST') {
+    let body: any;
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    if (!body.name || !body.code) return Response.json({ status: 'error', message: 'name and code are required' }, { status: 400 });
+    const id = crypto.randomUUID();
+    await env.DB.prepare('INSERT INTO entry_routes (id, name, code, created_at) VALUES (?,?,?,datetime(\'now\'))').bind(id, body.name, body.code).run();
+    return Response.json({ status: 'ok', entry_route: { id, name: body.name, code: body.code } }, { status: 201 });
+  }
+  // DELETE /api/entry-routes/:id
+  const segments = url.pathname.split('/');
+  const routeId = segments[3];
+  if (routeId && request.method === 'DELETE') {
+    await env.DB.prepare('DELETE FROM entry_routes WHERE id = ?').bind(routeId).run();
+    return Response.json({ status: 'ok' });
+  }
+  return Response.json({ error: 'method not allowed' }, { status: 405 });
+}
+
 async function handleTrackedLinks(request: Request, env: Env): Promise<Response> {
   const adapter = new TrackedLinkAdapter(env.DB);
   if (request.method === 'GET') { const links = await adapter.list(); return Response.json({ status: 'ok', links }); }

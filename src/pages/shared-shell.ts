@@ -10,6 +10,7 @@ export function getShellHtml(activePage: string, content: string): string {
     { id: 'conversions', label: 'CV\u7ba1\u7406', icon: '&#x1f3af;', path: '/dashboard/conversions' },
     { id: 'broadcasts', label: '\u914d\u4fe1\u7ba1\u7406', icon: '&#x1f4e2;', path: '/dashboard/broadcasts' },
     { id: 'forms', label: '\u30d5\u30a9\u30fc\u30e0\u7ba1\u7406', icon: '&#x1f4dd;', path: '/dashboard/forms' },
+    { id: 'entry-routes', label: '\u6d41\u5165\u5143\u7ba1\u7406', icon: '&#x1f6a9;', path: '/dashboard/entry-routes' },
     { id: 'line-accounts', label: 'LINE\u30a2\u30ab\u30a6\u30f3\u30c8', icon: '&#x1f4f1;', path: '/dashboard/line-accounts' },
     { id: 'ai-logs', label: 'AI\u30ed\u30b0', icon: '&#x1f4cb;', path: '/dashboard/ai-logs' },
   ];
