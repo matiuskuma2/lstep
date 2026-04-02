@@ -11,6 +11,7 @@ This project extends LINE Harness OSS with an AI orchestration layer for natural
 ## Core Principles
 
 - Safety before speed
+- **API で取得・自動化できることは全て自動化する（手動入力を求めない）**
 - Never bypass existing domain logic
 - One PR, one responsibility
 - Preview/confirm before mutating delivery settings
