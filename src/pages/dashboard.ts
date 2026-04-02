@@ -10,11 +10,11 @@ export function getDashboardHtml(): string {
         const [linksD, friendsD, scenariosD, cvsD] = await Promise.all([
           fetchJson('/api/tracked-links'),
           fetchJson('/lh/api/friends'),
-          fetchJson('/lh/api/scenarios'),
+          fetchJson('/api/scenarios'),
           fetchJson('/api/conversion-points'),
         ]);
         const friendCount = (friendsD.data && friendsD.data.total) || (friendsD.data && friendsD.data.items || []).length || (friendsD.friends||[]).length;
-        const scenarioCount = (scenariosD.data || scenariosD.scenarios || []).length;
+        const scenarioCount = (scenariosD.scenarios || []).length;
         const linkCount = (linksD.data || linksD.links || []).length;
         document.getElementById('stats').innerHTML =
           '<div class="stat"><div class="num">' + linkCount + '</div><div class="label">トラッキングリンク</div></div>' +

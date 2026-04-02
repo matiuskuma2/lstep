@@ -52,16 +52,15 @@ export function getScenariosPageHtml(): string {
     function toggleCreate() { const f=document.getElementById('createForm'); f.style.display=f.style.display==='none'?'block':'none'; }
     async function loadScenarios() {
       try {
-        const d = await fetchJson('/lh/api/scenarios?_t=' + Date.now());
-        allScenarios = d.data || d.scenarios || [];
-        const items = d.data || d.scenarios || [];
-        showList('scenarioList', items, 5, '\u30b7\u30ca\u30ea\u30aa\u304c\u3042\u308a\u307e\u305b\u3093', list =>
+        const d = await fetchJson('/api/scenarios');
+        allScenarios = d.scenarios || [];
+        showList('scenarioList', allScenarios, 5, '\u30b7\u30ca\u30ea\u30aa\u304c\u3042\u308a\u307e\u305b\u3093', list =>
           list.map(s =>
             '<tr onclick="showDetail(\\\''+s.id+'\\\')" style="cursor:pointer"><td>'+esc(s.name)+'</td>' +
-            '<td><span class="badge badge-active">'+(s.triggerType||s.trigger_type)+'</span></td>' +
-            '<td><span class="badge '+((s.isActive!==undefined?s.isActive:s.status==='active')?'badge-active':'badge-admin')+'">'+(s.isActive!==undefined?(s.isActive?'active':'draft'):s.status)+'</span></td>' +
-            '<td>'+(s.createdAt||s.created_at||'').substring(0,10)+'</td>' +
-            '<td style="white-space:nowrap"><button class="btn btn-primary" onclick="event.stopPropagation();showDetail(\\\''+s.id+'\\\')" style="padding:4px 12px;font-size:12px">\u8a73\u7d30</button> <button class="btn" onclick="event.stopPropagation();toggleStatus(\\\''+s.id+'\\\',\\\''+(s.isActive!==undefined?(s.isActive?'active':'draft'):(s.status||'draft'))+'\\\')" style="padding:4px 8px;font-size:11px;background:'+((s.isActive||s.status==='active')?'#ffebee;color:#c62828':'#e8f5e9;color:#2e7d32')+';border:none;border-radius:4px;cursor:pointer">'+((s.isActive||s.status==='active')?'\\u505c\\u6b62':'\\u6709\\u52b9\\u5316')+'</button></td></tr>'
+            '<td><span class="badge badge-active">'+s.trigger_type+'</span></td>' +
+            '<td><span class="badge '+(s.status==='active'?'badge-active':'badge-admin')+'">'+s.status+'</span></td>' +
+            '<td>'+(s.created_at||'').substring(0,10)+'</td>' +
+            '<td style="white-space:nowrap"><button class="btn btn-primary" onclick="event.stopPropagation();showDetail(\\\''+s.id+'\\\')" style="padding:4px 12px;font-size:12px">\u8a73\u7d30</button> <button class="btn" onclick="event.stopPropagation();toggleStatus(\\\''+s.id+'\\\',\\\''+s.status+'\\\')" style="padding:4px 8px;font-size:11px;background:'+(s.status==='active'?'#ffebee;color:#c62828':'#e8f5e9;color:#2e7d32')+';border:none;border-radius:4px;cursor:pointer">'+(s.status==='active'?'\\u505c\\u6b62':'\\u6709\\u52b9\\u5316')+'</button></td></tr>'
           ).join('')
         );
       } catch(e) {
