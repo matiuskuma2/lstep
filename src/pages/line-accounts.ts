@@ -21,6 +21,19 @@ export function getLineAccountsPageHtml(): string {
         <tbody id="laList"><tr><td colspan="6">\u8aad\u307f\u8fbc\u307f\u4e2d...</td></tr></tbody>
       </table>
     </div>
+    <div id="editModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:100;justify-content:center;align-items:center">
+      <div style="background:white;border-radius:12px;padding:24px;max-width:600px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.2)">
+        <h3 style="margin-bottom:16px;color:#333" id="editTitle">LINE\u30a2\u30ab\u30a6\u30f3\u30c8\u7de8\u96c6</h3>
+        <div style="margin-bottom:8px"><label style="font-size:13px;color:#333;display:block;margin-bottom:4px">\u30a2\u30ab\u30a6\u30f3\u30c8\u540d</label><input type="text" id="editName" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box"></div>
+        <div style="margin-bottom:8px"><label style="font-size:13px;color:#333;display:block;margin-bottom:4px">Channel Secret</label><input type="password" id="editSecret" style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:14px;outline:none;box-sizing:border-box"></div>
+        <div style="margin-bottom:8px"><label style="font-size:13px;color:#333;display:block;margin-bottom:4px">Channel Access Token</label><textarea id="editToken" style="width:100%;min-height:60px;padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-size:13px;outline:none;resize:vertical;box-sizing:border-box;font-family:monospace"></textarea></div>
+        <div class="msg error" id="editErr" style="margin-bottom:12px"></div>
+        <div style="display:flex;gap:12px;justify-content:flex-end">
+          <button class="btn" style="background:#eee;color:#333" onclick="closeEditModal()">\u30ad\u30e3\u30f3\u30bb\u30eb</button>
+          <button class="btn btn-primary" id="editSaveBtn" onclick="saveEditAccount()">\u4fdd\u5b58</button>
+        </div>
+      </div>
+    </div>
     <script>
     async function loadAccounts() {
       try {
@@ -29,7 +42,7 @@ export function getLineAccountsPageHtml(): string {
           items.map(a => {
             const secretMask = a.channel_secret ? a.channel_secret.substring(0,6) + '...' : '-';
             const tokenMask = a.channel_access_token ? a.channel_access_token.substring(0,10) + '...' : '-';
-            return '<tr><td>'+esc(a.name)+'</td><td style="font-size:11px;color:#999">'+esc(a.channel_id)+'</td><td><span class="badge '+(a.is_active?'badge-active':'badge-admin')+'">'+(a.is_active?'active':'inactive')+'</span></td><td style="font-size:10px;color:#999">Secret: '+esc(secretMask)+'<br>Token: '+esc(tokenMask)+'</td><td style="font-size:11px;color:#1976d2;word-break:break-all">/webhook</td><td style="white-space:nowrap"><button class="btn" style="padding:2px 8px;font-size:11px;background:#ffebee;color:#c62828;border:none;border-radius:4px;cursor:pointer" onclick="deleteAccount(\\''+a.id+'\\',\\''+esc(a.name).replace(/'/g,'')+'\\')">\\u524a\\u9664</button></td></tr>';
+            return '<tr><td>'+esc(a.name)+'</td><td style="font-size:11px;color:#999">'+esc(a.channel_id)+'</td><td><span class="badge '+(a.is_active?'badge-active':'badge-admin')+'">'+(a.is_active?'active':'inactive')+'</span></td><td style="font-size:10px;color:#999">Secret: '+esc(secretMask)+'<br>Token: '+esc(tokenMask)+'</td><td style="font-size:11px;color:#1976d2;word-break:break-all">/webhook</td><td style="white-space:nowrap"><button class="btn" style="padding:2px 8px;font-size:11px;background:#e3f2fd;color:#1565c0;border:none;border-radius:4px;cursor:pointer;margin-right:4px" onclick="openEditModal(\\''+a.id+'\\',\\''+esc(a.name).replace(/'/g,'')+'\\')">\\u7de8\\u96c6</button><button class="btn" style="padding:2px 8px;font-size:11px;background:#ffebee;color:#c62828;border:none;border-radius:4px;cursor:pointer" onclick="deleteAccount(\\''+a.id+'\\',\\''+esc(a.name).replace(/'/g,'')+'\\')">\\u524a\\u9664</button></td></tr>';
           }).join('')
         );
       } catch(e) { showError('laList', 6, e.message); }
@@ -48,6 +61,38 @@ export function getLineAccountsPageHtml(): string {
         if(d.status==='ok'){su.textContent='\\u767b\\u9332\\u3057\\u307e\\u3057\\u305f';su.style.display='block';document.getElementById('laName').value='';document.getElementById('laChannelId').value='';document.getElementById('laSecret').value='';document.getElementById('laToken').value='';loadAccounts();}
         else{er.textContent=d.message||'\\u767b\\u9332\\u5931\\u6557';er.style.display='block';}
       }catch(e){er.textContent=e.message;er.style.display='block';}
+    }
+    var editingAccountId = null;
+    function openEditModal(id, name) {
+      editingAccountId = id;
+      document.getElementById('editTitle').textContent = name + ' \\u306e\\u7de8\\u96c6';
+      document.getElementById('editName').value = name;
+      document.getElementById('editSecret').value = '';
+      document.getElementById('editToken').value = '';
+      document.getElementById('editErr').style.display = 'none';
+      document.getElementById('editModal').style.display = 'flex';
+    }
+    function closeEditModal() { editingAccountId = null; document.getElementById('editModal').style.display = 'none'; }
+    async function saveEditAccount() {
+      if (!editingAccountId) return;
+      var er = document.getElementById('editErr');
+      er.style.display = 'none';
+      var body = {};
+      var name = document.getElementById('editName').value;
+      if (name) body.name = name;
+      var secret = document.getElementById('editSecret').value;
+      if (secret) body.channel_secret = secret;
+      var token = document.getElementById('editToken').value;
+      if (token) body.channel_access_token = token;
+      var btn = document.getElementById('editSaveBtn');
+      btn.disabled = true; btn.textContent = '\\u4fdd\\u5b58\\u4e2d...';
+      try {
+        var r = await fetch('/api/line-accounts/' + editingAccountId, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(body) });
+        var d = await r.json();
+        if (d.status === 'ok') { closeEditModal(); loadAccounts(); }
+        else { er.textContent = d.message || '\\u66f4\\u65b0\\u5931\\u6557'; er.style.display = 'block'; }
+      } catch(e) { er.textContent = e.message; er.style.display = 'block'; }
+      btn.disabled = false; btn.textContent = '\\u4fdd\\u5b58';
     }
     async function deleteAccount(id, name) {
       if(!confirm('\\u300c'+name+'\\u300d\\u3092\\u524a\\u9664\\u3057\\u307e\\u3059\\u304b\\uff1f'))return;
