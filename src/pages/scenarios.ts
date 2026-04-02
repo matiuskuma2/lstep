@@ -61,7 +61,7 @@ export function getScenariosPageHtml(): string {
             '<td><span class="badge badge-active">'+(s.triggerType||s.trigger_type)+'</span></td>' +
             '<td><span class="badge '+((s.isActive!==undefined?s.isActive:s.status==='active')?'badge-active':'badge-admin')+'">'+(s.isActive!==undefined?(s.isActive?'active':'draft'):s.status)+'</span></td>' +
             '<td>'+(s.createdAt||s.created_at||'').substring(0,10)+'</td>' +
-            '<td style="white-space:nowrap"><button class="btn btn-primary" onclick="event.stopPropagation();showDetail(\\\''+s.id+'\\\')" style="padding:4px 12px;font-size:12px">\u8a73\u7d30</button> <button class="btn" onclick="event.stopPropagation();toggleStatus(\\\''+s.id+'\\\')" style="padding:4px 8px;font-size:11px;background:'+(s.status==='active'?'#ffebee;color:#c62828':'#e8f5e9;color:#2e7d32')+';border:none;border-radius:4px;cursor:pointer">'+(s.status==='active'?'\\u505c\\u6b62':'\\u6709\\u52b9\\u5316')+'</button></td></tr>'
+            '<td style="white-space:nowrap"><button class="btn btn-primary" onclick="event.stopPropagation();showDetail(\\\''+s.id+'\\\')" style="padding:4px 12px;font-size:12px">\u8a73\u7d30</button> <button class="btn" onclick="event.stopPropagation();toggleStatus(\\\''+s.id+'\\\',\\\''+(s.isActive!==undefined?(s.isActive?'active':'draft'):(s.status||'draft'))+'\\\')" style="padding:4px 8px;font-size:11px;background:'+((s.isActive||s.status==='active')?'#ffebee;color:#c62828':'#e8f5e9;color:#2e7d32')+';border:none;border-radius:4px;cursor:pointer">'+((s.isActive||s.status==='active')?'\\u505c\\u6b62':'\\u6709\\u52b9\\u5316')+'</button></td></tr>'
           ).join('')
         );
       } catch(e) {
@@ -106,10 +106,7 @@ export function getScenariosPageHtml(): string {
         else { alert('削除に失敗しました'); }
       } catch(e) { alert('エラー: '+e.message); }
     }
-    async function toggleStatus(id) {
-      var s = allScenarios.find(function(x){return x.id===id});
-      if(!s) return;
-      var currentStatus = s.isActive !== undefined ? (s.isActive ? 'active' : 'draft') : (s.status || 'draft');
+    async function toggleStatus(id, currentStatus) {
       var newStatus = currentStatus === 'active' ? 'draft' : 'active';
       try {
         var r = await fetch('/api/scenarios/'+id, {method:'PUT', headers:authHeaders(), body:JSON.stringify({status:newStatus})});
