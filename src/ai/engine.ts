@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT_V1 } from './prompts';
+import { SYSTEM_PROMPT_V2 } from './prompts';
 import type { AiChatRequest, AiChatResponse, ChatMessage } from './types';
 import type { Bot, KnowledgeItem } from '../adapters/bot-knowledge';
 import type { KnowledgeChunk } from '../adapters/knowledge-chunk';
@@ -14,7 +14,7 @@ export async function generatePlan(
   apiKey: string,
   botKnowledge?: BotKnowledgeContext,
 ): Promise<AiChatResponse> {
-  let systemPrompt = SYSTEM_PROMPT_V1;
+  let systemPrompt = SYSTEM_PROMPT_V2;
 
   if (botKnowledge?.bot) {
     const b = botKnowledge.bot;
@@ -26,15 +26,14 @@ export async function generatePlan(
     }
   }
 
-  // Inject knowledge chunks (Phase 1: all chunks; Phase 2: embedding-based)
+  // Inject knowledge chunks for RAG
   if (botKnowledge?.chunks && botKnowledge.chunks.length > 0) {
-    systemPrompt += '\n\n[Knowledge Context]\nUse the following knowledge chunks to inform your responses:\n';
+    systemPrompt += '\n\n[Knowledge Context]\n以下のナレッジを参考にして応答してください:\n';
     for (const chunk of botKnowledge.chunks) {
       systemPrompt += '\n---\n' + chunk.chunk_text + '\n';
     }
   } else if (botKnowledge?.knowledge && botKnowledge.knowledge.length > 0) {
-    // Fallback: use full knowledge content if no chunks exist
-    systemPrompt += '\n\n[Knowledge Context]\nUse the following knowledge to inform your responses:\n';
+    systemPrompt += '\n\n[Knowledge Context]\n以下のナレッジを参考にして応答してください:\n';
     for (const k of botKnowledge.knowledge) {
       systemPrompt += '\n--- ' + k.title + ' [' + k.category + '] ---\n' + k.content + '\n';
     }
@@ -54,16 +53,12 @@ export async function generatePlan(
   // Build current user message with context
   let userContent = '';
   if (request.context?.line_account_id) {
-    userContent += `[Context: LINE account = ${request.context.line_account_id}]\n\n`;
+    userContent += `[Context: LINE account = ${request.context.line_account_id}]\n`;
   }
-  if (request.accumulated_slots && request.accumulated_slots.length > 0) {
-    const filled = request.accumulated_slots.filter(s => s.value != null);
-    if (filled.length > 0) {
-      userContent += '[Previously confirmed slots: ' +
-        filled.map(s => `${s.name}=${JSON.stringify(s.value)}`).join(', ') +
-        ']\n\n';
-    }
+  if (request.context?.tenant_id) {
+    userContent += `[Context: tenant = ${request.context.tenant_id}]\n`;
   }
+  if (userContent) userContent += '\n';
   userContent += request.message;
 
   messages.push({ role: 'user', content: userContent });
@@ -77,8 +72,8 @@ export async function generatePlan(
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       messages,
-      max_tokens: 1500,
-      temperature: 0.1,
+      max_tokens: 2000,
+      temperature: 0.3,
     }),
   });
 
@@ -93,29 +88,31 @@ export async function generatePlan(
 
   const content = data.choices[0]?.message?.content || '';
 
+  // Strip markdown code fences if present
+  const cleaned = content.replace(/^```(?:json)?\s*\n?/m, '').replace(/\n?```\s*$/m, '').trim();
+
   let parsed: AiChatResponse;
   try {
-    parsed = JSON.parse(content) as AiChatResponse;
+    parsed = JSON.parse(cleaned) as AiChatResponse;
   } catch {
-    throw new Error(`Failed to parse AI response as JSON: ${content.substring(0, 200)}`);
+    // If JSON parse fails, return as general_question with the raw text
+    parsed = {
+      intent: 'general_question',
+      confidence: 0.5,
+      proposal: null,
+      questions: [],
+      is_ready: false,
+      display_message: content,
+    };
   }
 
   parsed.raw_message = request.message;
 
-  // Merge accumulated slots with newly extracted
-  if (request.accumulated_slots) {
-    const newSlotNames = new Set(parsed.slots.filter(s => s.value != null).map(s => s.name));
-    for (const accSlot of request.accumulated_slots) {
-      if (accSlot.value != null && !newSlotNames.has(accSlot.name)) {
-        parsed.slots.push(accSlot);
-      }
-    }
-  }
-
-  // Recalculate is_complete based on actual filled slots
-  const filledNames = new Set(parsed.slots.filter(s => s.value != null).map(s => s.name));
-  parsed.missing_slots = parsed.missing_slots.filter(s => !filledNames.has(s.name));
-  parsed.is_complete = parsed.missing_slots.length === 0;
+  // Ensure required fields have defaults
+  if (!parsed.intent) parsed.intent = 'unknown';
+  if (!parsed.questions) parsed.questions = [];
+  if (parsed.is_ready === undefined) parsed.is_ready = false;
+  if (!parsed.display_message) parsed.display_message = parsed.proposal?.summary || '';
 
   return parsed;
 }

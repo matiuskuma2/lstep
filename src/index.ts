@@ -27,6 +27,7 @@ import { getBotsPageHtml, getKnowledgePageHtml } from './pages/bot-knowledge';
 import { getAiLogsPageHtml } from './pages/ai-logs';
 import { getEntryRoutesPageHtml } from './pages/entry-routes';
 import { getLineAccountsPageHtml } from './pages/line-accounts';
+import { getChatPageHtml } from './pages/chat';
 
 // LINE Harness DB adapters
 import { createLineAccount, getLineAccounts as getLineAccountsList, updateLineAccount, deleteLineAccount } from './line-harness/db/line-accounts.js';
@@ -371,6 +372,8 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
         response = await handleAiTest(request, env);
       } else if (url.pathname === '/api/ai/chat') {
         response = await handleAiChatRoute(request, url, env);
+      } else if (url.pathname === '/api/ai/execute') {
+        response = await handleAiExecute(request, env);
       } else if (url.pathname === '/api/entry-routes' || url.pathname.startsWith('/api/entry-routes/')) {
         response = await handleEntryRoutes(request, url, env);
       } else if (url.pathname === '/api/tracked-links') {
@@ -400,7 +403,7 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
       } else if (url.pathname.startsWith('/t/')) {
         response = await handleRedirect(request, url, env);
       } else if (url.pathname === '/chat') {
-        response = new Response(getChatHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+        response = new Response(getChatPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/login') {
         response = new Response(getLoginHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/admin') {
@@ -1145,6 +1148,11 @@ async function handleAiChat(request: Request, env: Env): Promise<Response> {
   let auth: any = null;
   if (env.ADMIN_JWT_SECRET) { auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET); }
 
+  // Auto-resolve tenant_id from auth
+  const tenantId = auth?.tenant_id || body.context?.tenant_id || null;
+  if (tenantId && !body.context) body.context = {};
+  if (tenantId && body.context) body.context.tenant_id = tenantId;
+
   try {
     let botKnowledge: BotKnowledgeContext | undefined;
     if (body.bot_id && env.DB) {
@@ -1160,17 +1168,96 @@ async function handleAiChat(request: Request, env: Env): Promise<Response> {
     const plan = await generatePlan(body, env.OPENAI_API_KEY, botKnowledge);
     try {
       await logAdapter.record({
-        tenant_id: auth?.tenant_id, user_id: auth?.user_id, bot_id: body.bot_id,
+        tenant_id: tenantId, user_id: auth?.user_id, bot_id: body.bot_id,
         request_message: body.message, intent: plan.intent, confidence: plan.confidence,
-        slots: plan.slots, missing_slots: plan.missing_slots, plan: plan.plan,
-        is_complete: plan.is_complete,
+        slots: [], missing_slots: [],
+        plan: plan.proposal ? { description: plan.proposal.summary, actions: [] } : { description: '', actions: [] },
+        is_complete: plan.is_ready,
       });
     } catch {}
     return Response.json({ status: 'ok', ...plan });
   }
   catch (err) {
-    try { await logAdapter.record({ tenant_id: auth?.tenant_id, user_id: auth?.user_id, bot_id: body.bot_id, request_message: body.message, error: String(err) }); } catch {}
+    try { await logAdapter.record({ tenant_id: tenantId, user_id: auth?.user_id, bot_id: body.bot_id, request_message: body.message, error: String(err) }); } catch {}
     return Response.json({ status: 'error', message: String(err) }, { status: 502 });
+  }
+}
+
+// --- AI Execute (create scenario + steps + entry route + tracked link + CV in one shot) ---
+async function handleAiExecute(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'POST') return Response.json({ error: 'method not allowed' }, { status: 405 });
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+
+  let body: any;
+  try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+
+  const proposal = body.proposal;
+  if (!proposal) return Response.json({ status: 'error', message: 'proposal is required' }, { status: 400 });
+
+  const tenantId = auth.tenant_id || body.tenant_id;
+  if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
+
+  const results: any = { created: [] };
+
+  try {
+    // 1. Create scenario
+    if (proposal.scenario) {
+      const scenarioId = crypto.randomUUID();
+      await env.DB.prepare(
+        'INSERT INTO scenarios (id, tenant_id, name, trigger_type, status, created_at, updated_at) VALUES (?,?,?,?,?,datetime(\'now\'),datetime(\'now\'))'
+      ).bind(scenarioId, tenantId, proposal.scenario.name, proposal.scenario.trigger_type || 'friend_add', 'active').run();
+
+      // 2. Create steps
+      const steps = proposal.scenario.steps || [];
+      for (const step of steps) {
+        const stepId = crypto.randomUUID();
+        await env.DB.prepare(
+          'INSERT INTO scenario_steps (id, scenario_id, step_order, delay_minutes, message_type, message_content, goal_label, created_at) VALUES (?,?,?,?,?,?,?,datetime(\'now\'))'
+        ).bind(stepId, scenarioId, step.step_order, step.delay_minutes || 0, 'text', step.message_content, step.goal_label || null).run();
+      }
+
+      results.scenario = { id: scenarioId, name: proposal.scenario.name, steps_count: steps.length };
+      results.created.push('scenario');
+    }
+
+    // 3. Create entry route
+    if (proposal.entry_route && proposal.entry_route.code) {
+      const erId = crypto.randomUUID();
+      await env.DB.prepare(
+        'INSERT INTO entry_routes (id, name, code, created_at) VALUES (?,?,?,datetime(\'now\'))'
+      ).bind(erId, proposal.entry_route.name, proposal.entry_route.code).run();
+      results.entry_route = { id: erId, name: proposal.entry_route.name, code: proposal.entry_route.code };
+      results.created.push('entry_route');
+    }
+
+    // 4. Create tracked link
+    if (proposal.tracked_link && proposal.tracked_link.destination_url) {
+      const adapter = new TrackedLinkAdapter(env.DB);
+      const link = await adapter.create({
+        destination_url: proposal.tracked_link.destination_url,
+        campaign_label: proposal.tracked_link.campaign_label || '',
+        destination_type: 'external',
+      });
+      results.tracked_link = { id: link.id, tracking_url: `/t/${link.id}` };
+      results.created.push('tracked_link');
+    }
+
+    // 5. Create conversion point
+    if (proposal.conversion && proposal.conversion.name) {
+      const cvId = crypto.randomUUID();
+      await env.DB.prepare(
+        'INSERT INTO conversion_points (id, tenant_id, name, code, scope, verification_method, created_at) VALUES (?,?,?,?,?,?,datetime(\'now\'))'
+      ).bind(cvId, tenantId, proposal.conversion.name, proposal.conversion.code || proposal.conversion.name, 'scenario', 'server', ).run();
+      results.conversion = { id: cvId, name: proposal.conversion.name };
+      results.created.push('conversion_point');
+    }
+
+    return Response.json({ status: 'ok', ...results });
+  } catch (err) {
+    return Response.json({ status: 'error', message: String(err), partial_results: results }, { status: 500 });
   }
 }
 
@@ -1234,6 +1321,4 @@ function getLoginHtml(): string {
   return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>lchatAI Login</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh}.card{background:white;padding:40px;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,.1);width:100%;max-width:400px}h1{color:#06C755;font-size:24px;margin-bottom:8px}.subtitle{color:#666;font-size:14px;margin-bottom:24px}label{display:block;font-size:13px;color:#333;margin-bottom:4px;font-weight:500}input{width:100%;padding:10px 14px;border:1px solid #ddd;border-radius:8px;font-size:14px;margin-bottom:16px;outline:none}input:focus{border-color:#06C755}button{width:100%;padding:12px;background:#06C755;color:white;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer}button:hover{background:#05a648}.msg{font-size:13px;margin-bottom:12px;padding:8px 12px;border-radius:8px;display:none}.msg.error{background:#ffebee;color:#c62828}.msg.success{background:#e8f5e9;color:#2e7d32}</style></head><body><div class="card"><h1>lchatAI</h1><div class="subtitle">管理者ログイン</div><div class="msg error" id="error"></div><div class="msg success" id="success"></div><label>ログインID</label><input type="text" id="loginId" placeholder="login_id"><label>パスワード</label><input type="password" id="password" placeholder="password"><button onclick="doLogin()">ログイン</button></div><script>async function doLogin(){const l=document.getElementById('loginId').value,p=document.getElementById('password').value,er=document.getElementById('error'),su=document.getElementById('success');er.style.display='none';su.style.display='none';if(!l||!p){er.textContent='入力してください';er.style.display='block';return}try{const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({login_id:l,password:p})});const d=await r.json();if(d.status==='ok'){localStorage.setItem('lchatai_token',d.token);localStorage.setItem('lchatai_user',JSON.stringify(d.user));su.textContent='ログイン成功！';su.style.display='block';setTimeout(()=>window.location.href='/dashboard',1000)}else{er.textContent=d.message||'失敗';er.style.display='block'}}catch(err){er.textContent=err.message;er.style.display='block'}}document.getElementById('password').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()})</script></body></html>`;
 }
 
-function getChatHtml(): string {
-  return `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>lchatAI</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;height:100vh;display:flex;flex-direction:column}.header{background:#06C755;color:white;padding:16px 20px;font-size:18px;font-weight:600;display:flex;align-items:center;justify-content:space-between}.header span{font-size:14px;font-weight:400;opacity:.8}.header .nav a{color:rgba(255,255,255,.8);text-decoration:none;font-size:13px;margin-left:12px}.header .nav a:hover{color:white}.header .user-info{font-size:12px;opacity:.8;cursor:pointer}.chat-area{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px}.msg{max-width:85%;padding:12px 16px;border-radius:16px;font-size:14px;line-height:1.6;word-break:break-word}.msg.user{background:#06C755;color:white;align-self:flex-end;border-bottom-right-radius:4px}.msg.ai{background:white;color:#333;align-self:flex-start;border-bottom-left-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,.1)}.intent-badge{display:inline-block;background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;margin-bottom:8px}.slots-section{margin-top:8px}.slots-section h4{font-size:12px;color:#666;margin-bottom:4px}.slot-item{font-size:13px;padding:2px 0;display:flex;gap:6px}.slot-name{color:#1976d2;font-weight:500}.missing-section{margin-top:12px;background:#fff3e0;padding:10px 12px;border-radius:8px}.missing-section h4{font-size:12px;color:#e65100;margin-bottom:6px}.missing-q{font-size:13px;color:#bf360c;padding:3px 0;cursor:pointer}.missing-q:hover{text-decoration:underline}.plan-section{margin-top:12px;background:#e3f2fd;padding:10px 12px;border-radius:8px}.plan-section h4{font-size:12px;color:#1565c0;margin-bottom:4px}.plan-desc{font-size:13px;color:#0d47a1}.confirm-badge{display:inline-block;margin-top:8px;padding:4px 10px;border-radius:12px;font-size:12px;font-weight:600}.confirm-badge.required{background:#fce4ec;color:#c62828}.confirm-badge.not-required{background:#e8f5e9;color:#2e7d32}.confirm-badge.complete{background:#06C755;color:white;cursor:pointer;padding:8px 20px;font-size:14px}.confirm-badge.complete:hover{background:#05a648}.progress-bar{margin-top:8px;background:#e0e0e0;border-radius:4px;height:6px;overflow:hidden}.progress-fill{height:100%;background:#06C755;border-radius:4px;transition:width .3s}.bot-selector{padding:8px 16px;background:#f9f9f9;border-bottom:1px solid #e0e0e0;display:flex;align-items:center;gap:8px;font-size:13px;color:#666}.bot-selector select{padding:6px 10px;border:1px solid #ddd;border-radius:8px;font-size:13px;outline:none;min-width:180px}.bot-selector select:focus{border-color:#06C755}.bot-selector .bot-info{font-size:11px;color:#999}.input-area{padding:12px 16px;background:white;border-top:1px solid #e0e0e0;display:flex;gap:8px}.input-area input{flex:1;padding:10px 14px;border:1px solid #ddd;border-radius:24px;font-size:14px;outline:none}.input-area input:focus{border-color:#06C755}.input-area button{background:#06C755;color:white;border:none;border-radius:50%;width:40px;height:40px;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}.input-area button:disabled{background:#ccc}.loading{display:flex;gap:4px;padding:8px 0}.loading span{width:8px;height:8px;background:#999;border-radius:50%;animation:bounce 1.4s infinite}.loading span:nth-child(2){animation-delay:.2s}.loading span:nth-child(3){animation-delay:.4s}@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-8px)}}</style></head><body><div class="header"><div>lchatAI <span>v0.9</span></div><div class="nav"><a href="/dashboard">管理画面</a><span class="user-info" id="userInfo" onclick="logout()"></span></div></div><div class="bot-selector"><span>Bot:</span><select id="botSelect"><option value="">未選択（汎用）</option></select><span class="bot-info" id="botInfo"></span></div><div class="chat-area" id="chatArea"><div class="msg ai">LINE配信の設定をAIがお手伝いします。<br><br>例: 「新規友だち向けに3日ステップを作って」<br>例: 「YouTube流入向けのtracked linkを作って」<br>例: 「ライフプラン申込をCVにして」</div></div><div class="input-area"><input type="text" id="msgInput" placeholder="指示を入力..." autofocus><button id="sendBtn" onclick="sendMessage()">&#8593;</button></div><script>const chatArea=document.getElementById('chatArea'),msgInput=document.getElementById('msgInput'),sendBtn=document.getElementById('sendBtn'),userInfoEl=document.getElementById('userInfo');let conversationHistory=[],accumulatedSlots=[];const user=JSON.parse(localStorage.getItem('lchatai_user')||'null');if(user){userInfoEl.textContent=user.login_id+' [ログアウト]'}function logout(){localStorage.removeItem('lchatai_token');localStorage.removeItem('lchatai_user');window.location.href='/login'}msgInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing)sendMessage()});async function sendMessage(){const msg=msgInput.value.trim();if(!msg)return;addMsg(msg,'user');conversationHistory.push({role:'user',content:msg});msgInput.value='';sendBtn.disabled=true;const le=document.createElement('div');le.className='msg ai';le.innerHTML='<div class="loading"><span></span><span></span><span></span></div>';chatArea.appendChild(le);chatArea.scrollTop=chatArea.scrollHeight;try{const h={'Content-Type':'application/json'};const t=localStorage.getItem('lchatai_token');if(t)h['Authorization']='Bearer '+t;const r=await fetch('/api/ai/chat',{method:'POST',headers:h,body:JSON.stringify({message:msg,history:conversationHistory.slice(0,-1),accumulated_slots:accumulatedSlots,bot_id:document.getElementById('botSelect').value||undefined})});const d=await r.json();chatArea.removeChild(le);if(d.status==='ok'){accumulatedSlots=(d.slots||[]).filter(s=>s.value!=null);conversationHistory.push({role:'assistant',content:'Intent: '+d.intent});addPlanMsg(d)}else{addMsg('Error: '+(d.message||''),  'ai')}}catch(err){chatArea.removeChild(le);addMsg('Error: '+err.message,'ai')}sendBtn.disabled=false;chatArea.scrollTop=chatArea.scrollHeight}function addMsg(t,c){const e=document.createElement('div');e.className='msg '+c;e.textContent=t;chatArea.appendChild(e);chatArea.scrollTop=chatArea.scrollHeight}function fillQuestion(q){msgInput.value='';msgInput.focus();msgInput.placeholder=q}function addPlanMsg(d){const e=document.createElement('div');e.className='msg ai';const f=(d.slots||[]).filter(s=>s.value!=null);const tr=f.length+(d.missing_slots||[]).length;const p=tr>0?Math.round((f.length/tr)*100):0;let h='<div class="intent-badge">'+esc(d.intent)+' ('+Math.round((d.confidence||0)*100)+'%)</div>';h+='<div class="progress-bar"><div class="progress-fill" style="width:'+p+'%"></div></div>';h+='<div style="font-size:11px;color:#666;margin-top:2px">'+f.length+'/'+tr+' 項目完了</div>';if(f.length>0){h+='<div class="slots-section"><h4>&#x2705; 検出された情報</h4>';f.forEach(s=>{h+='<div class="slot-item"><span class="slot-name">'+esc(s.name)+':</span> '+esc(String(s.value))+'</div>'});h+='</div>'}if(d.missing_slots&&d.missing_slots.length>0){h+='<div class="missing-section"><h4>&#x2753; 不足している情報</h4>';d.missing_slots.forEach(s=>{h+='<div class="missing-q" onclick="fillQuestion(\\''+esc(s.ask_question).replace(/'/g,"\\\\'")+'\\')">・'+esc(s.ask_question)+'</div>'});h+='</div>'}if(d.plan){h+='<div class="plan-section"><h4>&#x1f4cb; 実行プラン</h4><div class="plan-desc">'+esc(d.plan.description)+'</div></div>'}if(d.is_complete){h+='<div class="confirm-badge complete" onclick="confirmPlan()">&#x2705; この内容で実行する</div>'}else if(d.requires_confirmation){h+='<div class="confirm-badge required">&#x1f512; 情報が揃ったら確認へ</div>'}else{h+='<div class="confirm-badge not-required">&#x2705; 確認不要</div>'}e.innerHTML=h;chatArea.appendChild(e)}async function confirmPlan(){var h={'Content-Type':'application/json'};var t=localStorage.getItem('lchatai_token');if(t)h['Authorization']='Bearer '+t;var scenarioName=null;var triggerType='manual';accumulatedSlots.forEach(function(s){if(s.name==='scenario_name')scenarioName=s.value;if(s.name==='trigger')triggerType=(s.value==='友だち追加'||s.value==='friend_add')?'friend_add':s.value;});if(!scenarioName)scenarioName='AI生成 '+new Date().toLocaleDateString('ja-JP');addMsg('シナリオ作成中...','ai');try{var body={name:scenarioName,trigger_type:triggerType};var r=await fetch('/api/scenarios',{method:'POST',headers:h,body:JSON.stringify(body)});var d=await r.json();if(d.status==='ok'&&d.scenario){addMsg('シナリオ「'+d.scenario.name+'」を作成しました。管理画面でステップを追加してください。','ai')}else{addMsg('作成失敗: '+(d.message||''),'ai')}}catch(e){addMsg('エラー: '+e.message,'ai')}conversationHistory=[];accumulatedSlots=[]}function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}async function loadBots(){try{const h={'Content-Type':'application/json'};const t=localStorage.getItem('lchatai_token');if(t)h['Authorization']='Bearer '+t;const r=await fetch('/api/bots',{headers:h});if(!r.ok)return;const d=await r.json();const sel=document.getElementById('botSelect');(d.bots||[]).forEach(b=>{const o=document.createElement('option');o.value=b.id;o.textContent=b.name+' ('+b.tone+')';sel.appendChild(o)})}catch(e){}}document.getElementById('botSelect').addEventListener('change',async function(){const id=this.value;const info=document.getElementById('botInfo');if(!id){info.textContent='';return}try{const h={'Content-Type':'application/json'};const t=localStorage.getItem('lchatai_token');if(t)h['Authorization']='Bearer '+t;const r=await fetch('/api/bots/'+id,{headers:h});const d=await r.json();if(d.status==='ok'){const b=d.bot;info.textContent=b.strategy+(b.knowledge&&b.knowledge.length?' | Knowledge: '+b.knowledge.length+'件':'')}}catch(e){info.textContent=''}});loadBots()</script></body></html>`;
-}
+// getChatHtml moved to src/pages/chat.ts as getChatPageHtml
