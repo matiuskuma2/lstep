@@ -112,7 +112,8 @@ export function getScenariosPageHtml(): string {
       var currentStatus = s.isActive !== undefined ? (s.isActive ? 'active' : 'draft') : (s.status || 'draft');
       var newStatus = currentStatus === 'active' ? 'draft' : 'active';
       try {
-        await fetch('/api/scenarios/'+id, {method:'PUT', headers:authHeaders(), body:JSON.stringify({status:newStatus})});
+        var r = await fetch('/api/scenarios/'+id, {method:'PUT', headers:authHeaders(), body:JSON.stringify({status:newStatus})});
+        if(!r.ok) { alert('ステータス変更に失敗: HTTP ' + r.status); return; }
         loadScenarios();
       } catch(e) { alert(e.message); }
     }
