@@ -22,37 +22,51 @@
 | forms | 編集/LIFF UI | - |
 
 ### UI未実装（upstream route あり、管理画面なし）
-| 機能 | 優先度 | Notes |
-|------|--------|-------|
-| automations | 高 | IF-THEN自動化。タグ追加→シナリオ起動等 |
-| rich-menus | 中 | LINE画面下メニュー切替 |
-| scoring | 中 | リードスコアリング。friends.score と連動 |
-| reminders | 中 | 日時指定リマインダー配信 |
-| templates | 中 | メッセージテンプレート再利用 |
-| chats | 低 | オペレーター対応チャット |
-| notifications | 低 | イベントトリガー通知 |
-| affiliates | 低 | アフィリエイト計測 |
-| staff | 低 | スタッフ権限管理 |
-| calendar | 低 | Google Calendar予約連携 |
-| stripe | 低 | 決済連携 |
-| ad-platforms | 低 | 広告CV連携（Meta/Google等） |
-| images | 低 | R2画像管理（未設定） |
-| liff | 中 | 内部LP候補 + フォーム |
-| webhooks(outgoing) | 低 | 外部サービス連携 |
+| 機能 | 優先度 | upstream routes | Notes |
+|------|--------|----------------|-------|
+| automations | 高 | /api/automations, /api/automations/:id, /api/automations/:id/logs | IF-THEN自動化。タグ追加→シナリオ起動等 |
+| rich-menus | 中 | /api/rich-menus, /api/rich-menus/:id/default, /api/rich-menus/:id/image | LINE画面下メニュー切替（DB永続化なし、LINE API直接） |
+| scoring | 中 | /api/scoring-rules, /api/scoring-rules/:id, /api/friends/:id/score | リードスコアリング。friends.score と連動 |
+| reminders | 中 | /api/reminders, /api/reminders/:id, /api/reminders/:id/steps, /api/reminders/:id/enroll/:friendId | 日時指定リマインダー配信 |
+| templates | 中 | /api/templates, /api/templates/:id | メッセージテンプレート再利用（step-deliveryで未使用） |
+| chats | 低 | /api/chats, /api/chats/:id, /api/chats/:id/send, /api/operators | オペレーター対応チャット |
+| notifications | 低 | /api/notifications/rules, /api/notifications/rules/:id, /api/notifications | イベントトリガー通知 |
+| affiliates | 低 | /api/affiliates, /api/affiliates/:id, /api/affiliates/click, /api/affiliates/:id/report | アフィリエイト計測 |
+| staff | 低 | /api/staff/me, /api/staff, /api/staff/:id, /api/staff/:id/regenerate-key | スタッフ権限管理（API Key認証あり） |
+| calendar | 低 | /api/integrations/google-calendar, /connect, /slots, /bookings, /book | Google Calendar予約連携（Service実装済み） |
+| stripe | 低 | /api/integrations/stripe/events, /api/integrations/stripe/webhook | 決済連携（Webhook受信は動作） |
+| ad-platforms | 低 | /api/ad-platforms, /api/ad-platforms/test, /api/ad-platforms/:id/logs | 広告CV連携（Meta/Google/TikTok/X） |
+| images | 低 | /api/images, /images/:key | R2画像管理（未設定） |
+| liff | 中 | /auth/line, /auth/callback, /api/liff/profile, /api/liff/link, /api/analytics/* | 内部LP候補 + LINE認証 + ref分析 |
+| webhooks(outgoing) | 低 | /api/webhooks/incoming, /api/webhooks/outgoing, /api/webhooks/incoming/:id/receive | 外部サービス連携 |
+| users | 低 | /api/users, /api/users/:id, /api/users/:id/link, /api/users/:id/accounts, /api/users/match | システムユーザー管理（friendsとは別） |
+| health | 低 | /api/accounts/:id/health, /api/accounts/migrations | アカウント健全性・マイグレーション管理 |
 
 ### Services 未接続（LINE Harness にあるが Cron/Worker に未配線）
-| Service | 機能 | 影響 |
-|---------|------|------|
-| broadcast | 一斉配信実行 | 配信ボタンが動かない |
-| segment-send | セグメント配信 | タグベース配信不可 |
-| segment-query | 配信対象抽出 | 条件検索不可 |
-| reminder-delivery | リマインダー | 日時配信不可 |
-| event-bus | イベント連動 | Webhook後の自動処理なし |
-| auto-track | URL自動追跡化 | メッセージ内URL未計測 |
-| ban-monitor | BAN検知 | アカウント監視なし |
-| stealth | ステルス配信 | 配信間隔ランダム化なし |
-| token-refresh | トークン更新 | Access Token手動更新 |
-| ad-conversion | 広告CV送信 | 広告API CV 連携なし |
+| Service | 機能 | 影響 | 接続先 |
+|---------|------|------|--------|
+| broadcast | 一斉配信実行 | 配信ボタンが動かない | Cron + /api/broadcasts/:id/send |
+| segment-send | セグメント配信 | タグベース配信不可 | broadcast から呼ばれる |
+| segment-query | 配信対象抽出 | 条件検索不可 | segment-send から呼ばれる |
+| reminder-delivery | リマインダー | 日時配信不可 | Cron scheduled handler |
+| event-bus | イベント連動 | Webhook後の自動処理なし | webhook + automations + notifications |
+| auto-track | URL自動追跡化 | メッセージ内URL未計測 | step-delivery + broadcast |
+| ban-monitor | BAN検知 | アカウント監視なし | Cron scheduled handler |
+| stealth | ステルス配信 | 配信間隔ランダム化なし | broadcast + segment-send |
+| token-refresh | トークン更新 | Access Token手動更新 | Cron scheduled handler |
+| ad-conversion | 広告CV送信 | 広告API CV 連携なし | event-bus → ad-platforms |
+| google-calendar | Google Calendar連携 | ✅ Service実装済み・route接続済み | calendar.ts route |
+
+### 自前API CRUD不足（UPDATE/DELETE未実装）
+| 機能 | GET | POST | PUT/PATCH | DELETE | 不足 |
+|------|-----|------|-----------|--------|------|
+| friends | ✅ | ✅ | ❌ | ❌ | 個別更新・削除なし |
+| broadcasts | ✅ | ✅ | ❌ | ❌ | 編集・削除なし |
+| forms | ✅ | ✅ | ❌ | ❌ | 編集・削除なし |
+| tags | ✅ | ✅ | ❌ | ❌ | 編集・削除なし |
+| conversion-points | ✅ | ✅ | ❌ | ❌ | 編集・削除なし |
+| tracked-links | ✅ | ✅ | ❌ | ❌ | 編集・削除・クリック分析なし |
+| entry-routes | ✅ | ✅ | ❌ | ✅ | 編集なし |
 
 ### 自前独自機能
 | 機能 | 状態 |
@@ -261,6 +275,46 @@ AI: 「3通構成を提案します。
 | knowledge | /api/knowledge | /api/knowledge/:id | 自前独自 |
 | AI chat | /api/ai/chat | - | 自前独自 |
 | admin | /api/admin/* | - | 自前独自 |
+
+---
+
+## LINE Harness DB テーブル一覧（57テーブル）
+
+### コア
+friends, users, scenarios, scenario_steps, friend_scenarios, tags, friend_tags
+
+### メッセージング
+templates, messages_log, broadcasts, chats, operators
+
+### トラッキング・計測
+tracked_links, link_clicks, entry_routes, ref_tracking, conversion_points, conversion_events
+
+### スコアリング
+scoring_rules, friend_scores
+
+### リマインダー
+reminders, reminder_steps, friend_reminders, friend_reminder_deliveries
+
+### 自動化
+automations, automation_logs
+
+### フォーム
+forms, form_submissions
+
+### 外部連携
+stripe_events, google_calendar_connections, calendar_bookings, ad_platforms, ad_conversion_logs
+
+### 通知・Webhook
+notification_rules, notifications, incoming_webhooks, outgoing_webhooks
+
+### アカウント管理
+line_accounts, account_health_logs, account_migrations, staff_members
+
+### アフィリエイト
+affiliates, affiliate_clicks
+
+### 自前独自テーブル
+bots, bot_knowledge, knowledge_items, knowledge_chunks, ai_execution_logs, admin_users, tenants
 
 ---
 
