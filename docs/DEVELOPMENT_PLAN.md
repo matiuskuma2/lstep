@@ -1,5 +1,69 @@
 # 開発計画書
 
+## LINE Harness 全機能 実装状況マトリクス
+
+### コア機能（動作中）
+| 機能 | 自前UI | upstream | Service | 状態 |
+|------|--------|----------|---------|------|
+| friends | ✅ | ✅ | - | 動作中 |
+| scenarios + steps | ✅ | ✅ | step-delivery(自前Cron) | 動作中 |
+| tags | ✅ | ✅ | - | 動作中 |
+| tracked-links + clicks | ✅ | ✅ | auto-track(未接続) | 動作中 |
+| conversions | ✅ | ❌(404) | - | CRUD動作 |
+| line-accounts | ✅ | ❌(500) | token-refresh(未接続) | 動作中 |
+| webhook | Hono | ✅ | event-bus(未接続) | 動作中 |
+| entry-routes | ✅ | - | - | 自前のみ |
+| auth/admin/tenant | ✅ | - | - | 自前のみ |
+
+### 一覧のみ（作成UI不完全）
+| 機能 | 不足 | upstream Service |
+|------|------|-----------------|
+| broadcasts | 編集/配信実行UI | broadcast + segment-send + segment-query |
+| forms | 編集/LIFF UI | - |
+
+### UI未実装（upstream route あり、管理画面なし）
+| 機能 | 優先度 | Notes |
+|------|--------|-------|
+| automations | 高 | IF-THEN自動化。タグ追加→シナリオ起動等 |
+| rich-menus | 中 | LINE画面下メニュー切替 |
+| scoring | 中 | リードスコアリング。friends.score と連動 |
+| reminders | 中 | 日時指定リマインダー配信 |
+| templates | 中 | メッセージテンプレート再利用 |
+| chats | 低 | オペレーター対応チャット |
+| notifications | 低 | イベントトリガー通知 |
+| affiliates | 低 | アフィリエイト計測 |
+| staff | 低 | スタッフ権限管理 |
+| calendar | 低 | Google Calendar予約連携 |
+| stripe | 低 | 決済連携 |
+| ad-platforms | 低 | 広告CV連携（Meta/Google等） |
+| images | 低 | R2画像管理（未設定） |
+| liff | 中 | 内部LP候補 + フォーム |
+| webhooks(outgoing) | 低 | 外部サービス連携 |
+
+### Services 未接続（LINE Harness にあるが Cron/Worker に未配線）
+| Service | 機能 | 影響 |
+|---------|------|------|
+| broadcast | 一斉配信実行 | 配信ボタンが動かない |
+| segment-send | セグメント配信 | タグベース配信不可 |
+| segment-query | 配信対象抽出 | 条件検索不可 |
+| reminder-delivery | リマインダー | 日時配信不可 |
+| event-bus | イベント連動 | Webhook後の自動処理なし |
+| auto-track | URL自動追跡化 | メッセージ内URL未計測 |
+| ban-monitor | BAN検知 | アカウント監視なし |
+| stealth | ステルス配信 | 配信間隔ランダム化なし |
+| token-refresh | トークン更新 | Access Token手動更新 |
+| ad-conversion | 広告CV送信 | 広告API CV 連携なし |
+
+### 自前独自機能
+| 機能 | 状態 |
+|------|------|
+| bots (system_prompt) | ✅ 動作中 |
+| knowledge + chunks | ✅ RAG基盤あり |
+| ai-chat | ⚠️ 要再設計 |
+| ai-logs | ✅ 動作中 |
+| /api/verify (自動検証) | ✅ 10項目PASS |
+| post-deploy auto-check | ✅ GitHub Actions |
+
 ## 現状評価
 
 ### スコアカード
