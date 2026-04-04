@@ -46,6 +46,17 @@ jobs:
             echo "target=staging" >> $GITHUB_OUTPUT
           fi
 
+      - name: Run D1 migrations (staging)
+        if: steps.env.outputs.target == 'staging'
+        run: |
+          for f in db/migrations/*.sql; do
+            echo "Running migration: $f"
+            wrangler d1 execute lstep-db --env staging --file "$f" || true
+          done
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Deploy to staging
         if: steps.env.outputs.target == 'staging'
         run: wrangler deploy --env staging
@@ -58,6 +69,17 @@ jobs:
         run: |
           echo "${{ secrets.OPENAI_API_KEY }}" | wrangler secret put OPENAI_API_KEY --env staging
           echo "${{ secrets.ADMIN_JWT_SECRET }}" | wrangler secret put ADMIN_JWT_SECRET --env staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Run D1 migrations (production)
+        if: steps.env.outputs.target == 'production'
+        run: |
+          for f in db/migrations/*.sql; do
+            echo "Running migration: $f"
+            wrangler d1 execute lstep-db --file "$f" || true
+          done
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
