@@ -1219,70 +1219,53 @@ async function handleAttributionReport(request: Request, env: Env): Promise<Resp
   const denied = requireRole(auth, 'super_admin', 'admin');
   if (denied) return denied;
 
-  // 1. Entry route summary: ref_code → friend count
-  const entryStats = await env.DB.prepare(`
-    SELECT
-      COALESCE(f.ref_code, '(不明)') as ref_code,
-      COUNT(*) as friend_count,
-      SUM(CASE WHEN f.is_following = 1 THEN 1 ELSE 0 END) as active_count
-    FROM friends f
-    GROUP BY f.ref_code
-    ORDER BY friend_count DESC
-  `).all();
+  let entryStats: any[] = [], clickStats: any[] = [], cvStats: any[] = [], refVisits: any[] = [];
 
-  // 2. Click stats: tracked links with click counts
-  const clickStats = await env.DB.prepare(`
-    SELECT
-      tl.id, tl.campaign_label, tl.destination_url,
-      COUNT(lc.id) as click_count
-    FROM tracked_links tl
-    LEFT JOIN link_clicks lc ON tl.id = lc.tracked_link_id
-    GROUP BY tl.id
-    ORDER BY click_count DESC
-    LIMIT 50
-  `).all();
+  // 1. Entry route summary: ref_code → friend count
+  try {
+    const r = await env.DB.prepare(`
+      SELECT COALESCE(f.ref_code, '(不明)') as ref_code,
+        COUNT(*) as friend_count,
+        SUM(CASE WHEN f.is_following = 1 THEN 1 ELSE 0 END) as active_count
+      FROM friends f GROUP BY f.ref_code ORDER BY friend_count DESC
+    `).all();
+    entryStats = r.results || [];
+  } catch {}
+
+  // 2. Click stats
+  try {
+    const r = await env.DB.prepare(`
+      SELECT tl.id, tl.campaign_label, tl.destination_url, COUNT(lc.id) as click_count
+      FROM tracked_links tl LEFT JOIN link_clicks lc ON tl.id = lc.tracked_link_id
+      GROUP BY tl.id ORDER BY click_count DESC LIMIT 50
+    `).all();
+    clickStats = r.results || [];
+  } catch {}
 
   // 3. Conversion stats
-  const cvStats = await env.DB.prepare(`
-    SELECT
-      cp.name as cv_name, cp.code as cv_code,
-      COUNT(ce.id) as event_count
-    FROM conversion_points cp
-    LEFT JOIN conversion_events ce ON cp.id = ce.conversion_point_id
-    GROUP BY cp.id
-    ORDER BY event_count DESC
-  `).all();
+  try {
+    const r = await env.DB.prepare(`
+      SELECT cp.name as cv_name, cp.code as cv_code, COUNT(ce.id) as event_count
+      FROM conversion_points cp LEFT JOIN conversion_events ce ON cp.id = ce.conversion_point_id
+      GROUP BY cp.id ORDER BY event_count DESC
+    `).all();
+    cvStats = r.results || [];
+  } catch {}
 
-  // 4. Full funnel: ref_code → clicks → conversions
-  const funnel = await env.DB.prepare(`
-    SELECT
-      COALESCE(f.ref_code, '(不明)') as source,
-      COUNT(DISTINCT f.id) as friends,
-      COUNT(DISTINCT lc.id) as clicks,
-      COUNT(DISTINCT ce.id) as conversions
-    FROM friends f
-    LEFT JOIN friend_scenarios fs ON f.id = fs.friend_id
-    LEFT JOIN link_clicks lc ON lc.tracked_link_id IN (SELECT id FROM tracked_links)
-    LEFT JOIN conversion_events ce ON ce.friend_id = f.id
-    GROUP BY f.ref_code
-    ORDER BY friends DESC
-  `).all();
-
-  // 5. Ref tracking visits (last 100)
-  const refVisits = await env.DB.prepare(`
-    SELECT ref_code, friend_id, created_at
-    FROM ref_tracking
-    ORDER BY created_at DESC
-    LIMIT 100
-  `).all();
+  // 4. Ref tracking visits (table may not exist yet)
+  try {
+    const r = await env.DB.prepare(`
+      SELECT ref_code, friend_id, created_at FROM ref_tracking ORDER BY created_at DESC LIMIT 100
+    `).all();
+    refVisits = r.results || [];
+  } catch {}
 
   return Response.json({
     status: 'ok',
-    entry_stats: entryStats.results || [],
-    click_stats: clickStats.results || [],
-    cv_stats: cvStats.results || [],
-    funnel: funnel.results || [],
-    ref_visits: refVisits.results || [],
+    entry_stats: entryStats,
+    click_stats: clickStats,
+    cv_stats: cvStats,
+    ref_visits: refVisits,
   });
 }
 

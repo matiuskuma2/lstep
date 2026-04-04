@@ -123,7 +123,10 @@ async function loadReport() {
       rb.innerHTML = '<tr><td colspan="3" style="padding:12px;color:#999">データがありません</td></tr>';
     }
   } catch (err) {
-    showError('エラー: ' + err.message);
+    document.getElementById('entryBody').innerHTML = '<tr><td colspan="3" style="color:#c62828">' + esc('エラー: ' + err.message) + '</td></tr>';
+    document.getElementById('clickBody').innerHTML = '<tr><td colspan="3" style="color:#c62828">取得失敗</td></tr>';
+    document.getElementById('cvBody').innerHTML = '<tr><td colspan="3" style="color:#c62828">取得失敗</td></tr>';
+    document.getElementById('refBody').innerHTML = '<tr><td colspan="3" style="color:#c62828">取得失敗</td></tr>';
   }
 }
 loadReport();
