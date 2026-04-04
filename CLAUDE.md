@@ -130,6 +130,28 @@ When supporting external LPs:
 6. Review with screenshots / payload examples / migration safety
 7. Only then expand scope
 
+## Codex Execution Model
+
+### 3-Gate System
+1. **入口ゲート**: `scripts/run-codex-task.sh` で Issue の監査ゲート6項目を検査
+2. **実装ゲート**: Codex は固定プロンプト + Issue 内容のみで実装（scope 外変更禁止）
+3. **実動ゲート**: staging deploy 後に PASS/FAIL/PENDING を判定
+
+### ルール正本
+- **CLAUDE.md**: 全ルールの正本（Claude Code が読む）
+- **AGENTS.md**: CLAUDE.md を Codex 向けに構造化したもの（Codex が読む）
+- 2ファイルの内容が矛盾したら CLAUDE.md が優先
+
+### Codex 起動フロー
+```
+1. Issue 作成（6項目監査ゲート必須）
+2. ./scripts/run-codex-task.sh <issue_number>
+3. 監査ゲート PASS → ブランチ作成 → 固定プロンプト生成
+4. Codex 実装 → commit → push
+5. PR 作成 → staging merge → deploy
+6. 実動確認 → PASS/FAIL/PENDING
+```
+
 ## Operational Roles
 
 - **Claude Code Web**: Design, audit, log interpretation, issue decomposition, PR review
