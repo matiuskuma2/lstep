@@ -157,18 +157,23 @@ app.post('/webhook', async (c) => {
       } catch {}
 
       if (event.type === 'follow' && lineUserId) {
-        // Save friend
+        // Save friend (core fields only - must not fail)
         const existing = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first();
         let friendId: string;
         if (existing) {
           friendId = (existing as any).id;
-          await env.DB.prepare("UPDATE friends SET is_following = 1, line_account_id = ?, updated_at = datetime('now') WHERE line_user_id = ?").bind(matchedAccount.id, lineUserId).run();
+          await env.DB.prepare("UPDATE friends SET is_following = 1, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
         } else {
           friendId = crypto.randomUUID();
           const now = new Date().toISOString();
           const tenant = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
-          await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, metadata, line_account_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').bind(friendId, tenant?.id || null, lineUserId, lineUserId, 'active', 1, 0, '{}', matchedAccount.id, now, now).run();
+          await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, metadata, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)').bind(friendId, tenant?.id || null, lineUserId, lineUserId, 'active', 1, 0, '{}', now, now).run();
         }
+
+        // Optional: set line_account_id (column may not exist yet)
+        try {
+          await env.DB.prepare("UPDATE friends SET line_account_id = ? WHERE id = ?").bind(matchedAccount.id, friendId).run();
+        } catch {}
 
         // Attribution: match ref_code from recent /r/:ref visits (within 30 min, same IP)
         try {
