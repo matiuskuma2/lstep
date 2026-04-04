@@ -42,6 +42,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .question-item{font-size:13px;color:#bf360c;padding:3px 0;cursor:pointer}
 .question-item:hover{text-decoration:underline}
 .intent-badge{display:inline-block;background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}
+.execute-btn{display:inline-block;margin-top:12px;padding:10px 24px;background:#06C755;color:white;border:none;border-radius:24px;font-size:15px;font-weight:600;cursor:pointer}
+.execute-btn:hover{background:#05a648}
+.execute-btn:disabled{background:#ccc;cursor:default}
+.result-card{margin-top:8px;border:1px solid #c8e6c9;border-radius:12px;background:#e8f5e9;padding:12px 14px}
+.result-item{font-size:13px;padding:3px 0;color:#2e7d32}
+.result-item a{color:#1565c0}
+.reused-badge{font-size:11px;color:#ff6f00;font-weight:500}
 .input-area{padding:12px 16px;background:white;border-top:1px solid #e0e0e0;display:flex;gap:8px}
 .input-area input{flex:1;padding:10px 14px;border:1px solid #ddd;border-radius:24px;font-size:14px;outline:none}
 .input-area input:focus{border-color:#06C755}
@@ -86,6 +93,7 @@ var msgInput = document.getElementById('msgInput');
 var sendBtn = document.getElementById('sendBtn');
 var userInfoEl = document.getElementById('userInfo');
 var conversationHistory = [];
+var lastProposal = null;
 
 var user = JSON.parse(localStorage.getItem('lchatai_user') || 'null');
 if (user) { userInfoEl.textContent = user.login_id + ' [logout]'; }
@@ -187,11 +195,11 @@ function addProposalMsg(d) {
     h += '</div>';
   }
 
-  // Status indicator (preview-only, no mutation)
+  // Execute button or status
   if (d.is_ready && d.proposal) {
-    h += '<div style="margin-top:8px;padding:8px 14px;background:#e8f5e9;border-radius:8px;font-size:13px;color:#2e7d32">&#x2705; 提案が完成しました。管理画面からシナリオを作成できます。<br><a href="/dashboard/scenarios" style="color:#1565c0">シナリオ管理画面へ</a></div>';
+    h += '<button class="execute-btn" onclick="executePlan()">&#x2705; この内容で作成する</button>';
   } else if (d.proposal) {
-    h += '<div style="margin-top:8px;font-size:12px;color:#999">質問に回答すると提案が完成します</div>';
+    h += '<div style="margin-top:8px;font-size:12px;color:#999">質問に回答するか「OK」「作成して」と送ると作成できます</div>';
   }
 
   e.innerHTML = h;
@@ -228,6 +236,7 @@ async function sendMessage() {
     chatArea.removeChild(le);
 
     if (d.status === 'ok') {
+      lastProposal = d.proposal;
       conversationHistory.push({ role: 'assistant', content: d.display_message || '' });
       addProposalMsg(d);
     } else {
@@ -238,6 +247,61 @@ async function sendMessage() {
     addMsg('Error: ' + err.message, 'ai');
   }
   sendBtn.disabled = false;
+}
+
+async function executePlan() {
+  if (!lastProposal) { addMsg('提案データがありません。', 'ai'); return; }
+
+  var btn = document.querySelector('.execute-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '作成中...'; }
+
+  try {
+    var r = await fetch('/api/ai/execute', {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ proposal: lastProposal })
+    });
+    var d = await r.json();
+
+    if (d.status === 'ok') {
+      var e = document.createElement('div');
+      e.className = 'msg ai';
+      var h = '<div class="result-card">';
+      h += '<h4 style="margin-bottom:8px;color:#2e7d32">&#x2705; 作成完了</h4>';
+
+      if (d.scenario) {
+        h += '<div class="result-item">シナリオ: ' + esc(d.scenario.name) + ' (' + d.scenario.steps_count + '通)</div>';
+      }
+      if (d.entry_route) {
+        h += '<div class="result-item">流入元: ' + esc(d.entry_route.name) + ' (code: ' + esc(d.entry_route.code) + ')';
+        if (d.entry_route.reused) h += ' <span class="reused-badge">(既存を再利用)</span>';
+        h += '</div>';
+      }
+      if (d.tracked_link) {
+        h += '<div class="result-item">Tracked Link: ' + esc(d.tracked_link.tracking_url) + '</div>';
+      }
+      if (d.conversion) {
+        h += '<div class="result-item">CV: ' + esc(d.conversion.name);
+        if (d.conversion.reused) h += ' <span class="reused-badge">(既存を再利用)</span>';
+        h += '</div>';
+      }
+
+      h += '<div style="margin-top:8px"><a href="/dashboard/scenarios" style="color:#1565c0;font-size:13px">シナリオ管理画面で確認</a></div>';
+      h += '</div>';
+      e.innerHTML = h;
+      chatArea.appendChild(e);
+      chatArea.scrollTop = chatArea.scrollHeight;
+
+      lastProposal = null;
+      conversationHistory = [];
+    } else {
+      addMsg('作成失敗: ' + (d.message || ''), 'ai');
+    }
+  } catch (err) {
+    addMsg('エラー: ' + err.message, 'ai');
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = '\\u2705 この内容で作成する'; }
 }
 
 async function loadBots() {

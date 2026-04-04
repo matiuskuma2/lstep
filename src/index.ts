@@ -372,6 +372,8 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
         response = await handleAiTest(request, env);
       } else if (url.pathname === '/api/ai/chat') {
         response = await handleAiChatRoute(request, url, env);
+      } else if (url.pathname === '/api/ai/execute') {
+        response = await handleAiExecute(request, env);
       } else if (url.pathname === '/api/entry-routes' || url.pathname.startsWith('/api/entry-routes/')) {
         response = await handleEntryRoutes(request, url, env);
       } else if (url.pathname === '/api/tracked-links') {
@@ -1178,6 +1180,100 @@ async function handleAiChat(request: Request, env: Env): Promise<Response> {
   catch (err) {
     try { await logAdapter.record({ tenant_id: tenantId, user_id: auth?.user_id, bot_id: body.bot_id, request_message: body.message, error: String(err) }); } catch {}
     return Response.json({ status: 'error', message: String(err) }, { status: 502 });
+  }
+}
+
+// --- AI Execute (Phase 1b: create scenario + steps + entry route + tracked link + CV) ---
+async function handleAiExecute(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'POST') return Response.json({ error: 'method not allowed' }, { status: 405 });
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+
+  let body: any;
+  try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+
+  const proposal = body.proposal;
+  if (!proposal) return Response.json({ status: 'error', message: 'proposal is required' }, { status: 400 });
+
+  const tenantId = auth.tenant_id || body.tenant_id;
+  if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
+
+  const results: any = { created: [] };
+
+  try {
+    // 1. Create scenario + steps
+    if (proposal.scenario) {
+      const scenarioId = crypto.randomUUID();
+      const steps = proposal.scenario.steps || [];
+
+      // Use batch for scenario + all steps
+      const stmts = [
+        env.DB.prepare(
+          'INSERT INTO scenarios (id, tenant_id, name, trigger_type, status, created_at, updated_at) VALUES (?,?,?,?,?,datetime(\'now\'),datetime(\'now\'))'
+        ).bind(scenarioId, tenantId, proposal.scenario.name, proposal.scenario.trigger_type || 'friend_add', 'active'),
+      ];
+      for (const step of steps) {
+        stmts.push(
+          env.DB.prepare(
+            'INSERT INTO scenario_steps (id, scenario_id, step_order, delay_minutes, message_type, message_content, goal_label, created_at) VALUES (?,?,?,?,?,?,?,datetime(\'now\'))'
+          ).bind(crypto.randomUUID(), scenarioId, step.step_order, step.delay_minutes || 0, 'text', step.message_content, step.goal_label || null)
+        );
+      }
+      await env.DB.batch(stmts);
+
+      results.scenario = { id: scenarioId, name: proposal.scenario.name, steps_count: steps.length };
+      results.created.push('scenario');
+    }
+
+    // 2. Create entry route (skip if code already exists)
+    if (proposal.entry_route && proposal.entry_route.code) {
+      const existing = await env.DB.prepare('SELECT id, name, code FROM entry_routes WHERE code = ?').bind(proposal.entry_route.code).first();
+      if (existing) {
+        results.entry_route = { id: existing.id, name: existing.name, code: existing.code, reused: true };
+        results.created.push('entry_route_reused');
+      } else {
+        const erId = crypto.randomUUID();
+        await env.DB.prepare(
+          'INSERT INTO entry_routes (id, name, code, created_at) VALUES (?,?,?,datetime(\'now\'))'
+        ).bind(erId, proposal.entry_route.name, proposal.entry_route.code).run();
+        results.entry_route = { id: erId, name: proposal.entry_route.name, code: proposal.entry_route.code };
+        results.created.push('entry_route');
+      }
+    }
+
+    // 3. Create tracked link (skip if destination_url is empty)
+    if (proposal.tracked_link && proposal.tracked_link.destination_url) {
+      const adapter = new TrackedLinkAdapter(env.DB);
+      const link = await adapter.create({
+        destination_url: proposal.tracked_link.destination_url,
+        campaign_label: proposal.tracked_link.campaign_label || '',
+        destination_type: 'external',
+      });
+      results.tracked_link = { id: link.id, tracking_url: `/t/${link.id}` };
+      results.created.push('tracked_link');
+    }
+
+    // 4. Create conversion point (skip if code already exists)
+    if (proposal.conversion && proposal.conversion.name && proposal.conversion.code) {
+      const existingCv = await env.DB.prepare('SELECT id, name, code FROM conversion_points WHERE code = ? AND tenant_id = ?').bind(proposal.conversion.code, tenantId).first();
+      if (existingCv) {
+        results.conversion = { id: existingCv.id, name: existingCv.name, code: existingCv.code, reused: true };
+        results.created.push('conversion_reused');
+      } else {
+        const cvId = crypto.randomUUID();
+        await env.DB.prepare(
+          'INSERT INTO conversion_points (id, tenant_id, name, code, scope, verification_method, created_at) VALUES (?,?,?,?,?,?,datetime(\'now\'))'
+        ).bind(cvId, tenantId, proposal.conversion.name, proposal.conversion.code, 'scenario', 'server').run();
+        results.conversion = { id: cvId, name: proposal.conversion.name, code: proposal.conversion.code };
+        results.created.push('conversion_point');
+      }
+    }
+
+    return Response.json({ status: 'ok', ...results });
+  } catch (err) {
+    return Response.json({ status: 'error', message: String(err), partial_results: results }, { status: 500 });
   }
 }
 
