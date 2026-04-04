@@ -1198,7 +1198,13 @@ async function handleAiExecute(request: Request, env: Env): Promise<Response> {
   if (!proposal) return Response.json({ status: 'error', message: 'proposal is required' }, { status: 400 });
 
   const tenantId = auth.tenant_id || body.tenant_id;
-  if (!tenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
+  // super_admin has no tenant_id - auto-resolve from DB
+  let effectiveTenantId = tenantId;
+  if (!effectiveTenantId) {
+    const t = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
+    effectiveTenantId = t?.id;
+  }
+  if (!effectiveTenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
 
   const results: any = { created: [] };
 
@@ -1212,7 +1218,7 @@ async function handleAiExecute(request: Request, env: Env): Promise<Response> {
       const stmts = [
         env.DB.prepare(
           'INSERT INTO scenarios (id, tenant_id, name, trigger_type, status, created_at, updated_at) VALUES (?,?,?,?,?,datetime(\'now\'),datetime(\'now\'))'
-        ).bind(scenarioId, tenantId, proposal.scenario.name, proposal.scenario.trigger_type || 'friend_add', 'active'),
+        ).bind(scenarioId, effectiveTenantId, proposal.scenario.name, proposal.scenario.trigger_type || 'friend_add', 'active'),
       ];
       for (const step of steps) {
         stmts.push(
@@ -1257,7 +1263,7 @@ async function handleAiExecute(request: Request, env: Env): Promise<Response> {
 
     // 4. Create conversion point (skip if code already exists)
     if (proposal.conversion && proposal.conversion.name && proposal.conversion.code) {
-      const existingCv = await env.DB.prepare('SELECT id, name, code FROM conversion_points WHERE code = ? AND tenant_id = ?').bind(proposal.conversion.code, tenantId).first();
+      const existingCv = await env.DB.prepare('SELECT id, name, code FROM conversion_points WHERE code = ? AND tenant_id = ?').bind(proposal.conversion.code, effectiveTenantId).first();
       if (existingCv) {
         results.conversion = { id: existingCv.id, name: existingCv.name, code: existingCv.code, reused: true };
         results.created.push('conversion_reused');
@@ -1265,7 +1271,7 @@ async function handleAiExecute(request: Request, env: Env): Promise<Response> {
         const cvId = crypto.randomUUID();
         await env.DB.prepare(
           'INSERT INTO conversion_points (id, tenant_id, name, code, scope, verification_method, created_at) VALUES (?,?,?,?,?,?,datetime(\'now\'))'
-        ).bind(cvId, tenantId, proposal.conversion.name, proposal.conversion.code, 'scenario', 'server').run();
+        ).bind(cvId, effectiveTenantId, proposal.conversion.name, proposal.conversion.code, 'scenario', 'server').run();
         results.conversion = { id: cvId, name: proposal.conversion.name, code: proposal.conversion.code };
         results.created.push('conversion_point');
       }
