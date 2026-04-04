@@ -28,6 +28,7 @@ import { getAiLogsPageHtml } from './pages/ai-logs';
 import { getEntryRoutesPageHtml } from './pages/entry-routes';
 import { getLineAccountsPageHtml } from './pages/line-accounts';
 import { getChatPageHtml } from './pages/chat';
+import { getReportPageHtml } from './pages/report';
 
 // LINE Harness DB adapters
 import { createLineAccount, getLineAccounts as getLineAccountsList, updateLineAccount, deleteLineAccount } from './line-harness/db/line-accounts.js';
@@ -158,14 +159,31 @@ app.post('/webhook', async (c) => {
       if (event.type === 'follow' && lineUserId) {
         // Save friend
         const existing = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first();
+        let friendId: string;
         if (existing) {
+          friendId = (existing as any).id;
           await env.DB.prepare("UPDATE friends SET is_following = 1, updated_at = datetime('now') WHERE line_user_id = ?").bind(lineUserId).run();
         } else {
-          const id = crypto.randomUUID();
+          friendId = crypto.randomUUID();
           const now = new Date().toISOString();
           const tenant = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
-          await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(id, tenant?.id || null, lineUserId, lineUserId, 'active', 1, 0, now, now).run();
+          await env.DB.prepare('INSERT INTO friends (id, tenant_id, display_name, line_user_id, status, is_following, score, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)').bind(friendId, tenant?.id || null, lineUserId, lineUserId, 'active', 1, 0, now, now).run();
         }
+
+        // Attribution: match ref_code from recent /r/:ref visits (within 30 min, same IP)
+        try {
+          const ip = c.req.header('cf-connecting-ip') || '';
+          const ipHash = ip ? await hashIp(ip) : null;
+          if (ipHash) {
+            const refMatch = await env.DB.prepare(
+              "SELECT ref_code FROM ref_tracking WHERE ip_hash = ? AND friend_id IS NULL AND created_at > datetime('now', '-30 minutes') ORDER BY created_at DESC LIMIT 1"
+            ).bind(ipHash).first<{ref_code: string}>();
+            if (refMatch) {
+              await env.DB.prepare("UPDATE friends SET ref_code = ? WHERE id = ?").bind(refMatch.ref_code, friendId).run();
+              await env.DB.prepare("UPDATE ref_tracking SET friend_id = ? WHERE ip_hash = ? AND friend_id IS NULL AND created_at > datetime('now', '-30 minutes')").bind(friendId, ipHash).run();
+            }
+          }
+        } catch {}
 
         // Immediate push (this pattern worked in PR #105)
         try {
@@ -176,16 +194,13 @@ app.post('/webhook', async (c) => {
               headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + matchedAccount.channel_access_token },
               body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text: stepMsg.message_content }] }),
             });
-            // Enrollment for step 2+ via Cron
-            const friend = await env.DB.prepare('SELECT id FROM friends WHERE line_user_id = ?').bind(lineUserId).first<{id: string}>();
-            if (friend) {
-              await env.DB.prepare('DELETE FROM friend_scenarios WHERE friend_id = ?').bind(friend.id).run();
-              const now = new Date().toISOString();
-              const nextDelivery = new Date(Date.now() + 60000).toISOString();
-              await env.DB.prepare('INSERT INTO friend_scenarios (id, friend_id, scenario_id, current_step_order, status, started_at, next_delivery_at, updated_at) VALUES (?,?,?,?,?,?,?,?)').bind(
-                crypto.randomUUID(), friend.id, stepMsg.scenario_id, 1, 'active', now, nextDelivery, now
-              ).run();
-            }
+            // Enrollment for step 2+ via Cron (friendId already resolved above)
+            await env.DB.prepare('DELETE FROM friend_scenarios WHERE friend_id = ?').bind(friendId).run();
+            const now2 = new Date().toISOString();
+            const nextDelivery = new Date(Date.now() + 60000).toISOString();
+            await env.DB.prepare('INSERT INTO friend_scenarios (id, friend_id, scenario_id, current_step_order, status, started_at, next_delivery_at, updated_at) VALUES (?,?,?,?,?,?,?,?)').bind(
+              crypto.randomUUID(), friendId, stepMsg.scenario_id, 1, 'active', now2, nextDelivery, now2
+            ).run();
           }
         } catch {}
 
@@ -368,6 +383,8 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
         response = await handleLineAccounts(request, url, env);
       } else if (url.pathname === '/api/ai/logs') {
         response = await handleAiLogs(request, env);
+      } else if (url.pathname === '/api/report/attribution') {
+        response = await handleAttributionReport(request, env);
       } else if (url.pathname === '/api/ai/test') {
         response = await handleAiTest(request, env);
       } else if (url.pathname === '/api/ai/chat') {
@@ -380,6 +397,15 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
         response = await handleTrackedLinks(request, env);
       } else if (url.pathname.startsWith('/r/')) {
         const ref = url.pathname.replace('/r/', '');
+        // Record ref access for attribution matching
+        try {
+          const ip = request.headers.get('cf-connecting-ip') || '';
+          const ua = request.headers.get('user-agent') || '';
+          const ipHash = ip ? await hashIp(ip) : null;
+          await env.DB.prepare(
+            'INSERT INTO ref_tracking (id, ref_code, ip_hash, user_agent, created_at) VALUES (?,?,?,?,datetime(\'now\'))'
+          ).bind(crypto.randomUUID(), ref, ipHash, ua).run();
+        } catch {}
         const lineAccount = await env.DB.prepare('SELECT channel_access_token, name FROM line_accounts WHERE is_active = 1 LIMIT 1').first<{channel_access_token: string; name: string}>();
         let lineUrl = '#';
         let botName = lineAccount?.name || 'lchatAI';
@@ -430,6 +456,8 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
         response = new Response(getKnowledgePageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/entry-routes') {
         response = new Response(getEntryRoutesPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      } else if (url.pathname === '/dashboard/report') {
+        response = new Response(getReportPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/ai-logs') {
         response = new Response(getAiLogsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/line-accounts') {
@@ -1183,6 +1211,81 @@ async function handleAiChat(request: Request, env: Env): Promise<Response> {
   }
 }
 
+// --- Attribution Report ---
+async function handleAttributionReport(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'GET') return Response.json({ error: 'method not allowed' }, { status: 405 });
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+
+  // 1. Entry route summary: ref_code → friend count
+  const entryStats = await env.DB.prepare(`
+    SELECT
+      COALESCE(f.ref_code, '(不明)') as ref_code,
+      COUNT(*) as friend_count,
+      SUM(CASE WHEN f.is_following = 1 THEN 1 ELSE 0 END) as active_count
+    FROM friends f
+    GROUP BY f.ref_code
+    ORDER BY friend_count DESC
+  `).all();
+
+  // 2. Click stats: tracked links with click counts
+  const clickStats = await env.DB.prepare(`
+    SELECT
+      tl.id, tl.campaign_label, tl.destination_url,
+      COUNT(lc.id) as click_count
+    FROM tracked_links tl
+    LEFT JOIN link_clicks lc ON tl.id = lc.tracked_link_id
+    GROUP BY tl.id
+    ORDER BY click_count DESC
+    LIMIT 50
+  `).all();
+
+  // 3. Conversion stats
+  const cvStats = await env.DB.prepare(`
+    SELECT
+      cp.name as cv_name, cp.code as cv_code,
+      COUNT(ce.id) as event_count
+    FROM conversion_points cp
+    LEFT JOIN conversion_events ce ON cp.id = ce.conversion_point_id
+    GROUP BY cp.id
+    ORDER BY event_count DESC
+  `).all();
+
+  // 4. Full funnel: ref_code → clicks → conversions
+  const funnel = await env.DB.prepare(`
+    SELECT
+      COALESCE(f.ref_code, '(不明)') as source,
+      COUNT(DISTINCT f.id) as friends,
+      COUNT(DISTINCT lc.id) as clicks,
+      COUNT(DISTINCT ce.id) as conversions
+    FROM friends f
+    LEFT JOIN friend_scenarios fs ON f.id = fs.friend_id
+    LEFT JOIN link_clicks lc ON lc.tracked_link_id IN (SELECT id FROM tracked_links)
+    LEFT JOIN conversion_events ce ON ce.friend_id = f.id
+    GROUP BY f.ref_code
+    ORDER BY friends DESC
+  `).all();
+
+  // 5. Ref tracking visits (last 100)
+  const refVisits = await env.DB.prepare(`
+    SELECT ref_code, friend_id, created_at
+    FROM ref_tracking
+    ORDER BY created_at DESC
+    LIMIT 100
+  `).all();
+
+  return Response.json({
+    status: 'ok',
+    entry_stats: entryStats.results || [],
+    click_stats: clickStats.results || [],
+    cv_stats: cvStats.results || [],
+    funnel: funnel.results || [],
+    ref_visits: refVisits.results || [],
+  });
+}
+
 // --- AI Execute (Phase 1b: create scenario + steps + entry route + tracked link + CV) ---
 async function handleAiExecute(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'POST') return Response.json({ error: 'method not allowed' }, { status: 405 });
@@ -1344,3 +1447,9 @@ function getLoginHtml(): string {
 }
 
 // getChatHtml moved to src/pages/chat.ts as getChatPageHtml
+
+async function hashIp(ip: string): Promise<string> {
+  const data = new TextEncoder().encode(ip);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 16);
+}
