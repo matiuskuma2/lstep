@@ -108,6 +108,12 @@ jobs:
 
           echo "## Post-Deploy Verification" >> $GITHUB_STEP_SUMMARY
 
+          # Run pending migrations via Worker API
+          echo "Running migrations..."
+          MIGRATE=$(curl -s -X POST https://lstep-ai-api-stg.yahoorilarc.workers.dev/api/debug/migrate 2>/dev/null || echo '{"status":"ERROR"}')
+          echo "- **Migrations:** $(echo "$MIGRATE" | head -c 500)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
           # Health check
           HEALTH=$(curl -s -o /dev/null -w "%{http_code}" https://lstep-ai-api-stg.yahoorilarc.workers.dev/health)
           if [ "$HEALTH" = "200" ]; then

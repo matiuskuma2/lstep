@@ -300,6 +300,34 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
           checks['upstream_routes'] = res.status < 500 ? { status: 'PASS', detail: 'status=' + res.status } : { status: 'FAIL', detail: 'status=' + res.status };
         } catch (e: any) { checks['upstream_routes'] = { status: 'FAIL', detail: e.message }; }
 
+        // C11: Live schema — friends table required columns
+        try {
+          const cols = await env.DB.prepare("PRAGMA table_info('friends')").all();
+          const colNames = (cols.results || []).map((c: any) => c.name);
+          const required = ['id', 'tenant_id', 'line_user_id', 'display_name', 'is_following', 'ref_code', 'metadata', 'updated_at', 'score'];
+          const missing = required.filter(r => !colNames.includes(r));
+          checks['schema_friends'] = missing.length === 0
+            ? { status: 'PASS', detail: 'all ' + required.length + ' required columns present' }
+            : { status: 'FAIL', detail: 'missing: ' + missing.join(', ') };
+        } catch (e: any) { checks['schema_friends'] = { status: 'FAIL', detail: e.message }; }
+
+        // C12: Live schema — ref_tracking table exists
+        try {
+          await env.DB.prepare('SELECT COUNT(*) as cnt FROM ref_tracking').first();
+          checks['schema_ref_tracking'] = { status: 'PASS' };
+        } catch (e: any) {
+          checks['schema_ref_tracking'] = { status: 'FAIL', detail: 'table missing — run POST /api/debug/migrate' };
+        }
+
+        // C13: Live schema — scenario_steps.goal_label exists
+        try {
+          const cols = await env.DB.prepare("PRAGMA table_info('scenario_steps')").all();
+          const colNames = (cols.results || []).map((c: any) => c.name);
+          checks['schema_scenario_steps'] = colNames.includes('goal_label')
+            ? { status: 'PASS' }
+            : { status: 'WARN', detail: 'goal_label column missing' };
+        } catch (e: any) { checks['schema_scenario_steps'] = { status: 'FAIL', detail: e.message }; }
+
         const passed = Object.values(checks).filter(c => c.status === 'PASS').length;
         const failed = Object.values(checks).filter(c => c.status === 'FAIL').length;
         const warned = Object.values(checks).filter(c => c.status === 'WARN').length;

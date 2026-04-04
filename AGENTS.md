@@ -97,6 +97,12 @@ Issue に以下の6項目が記載されていること。1つでも欠けたら
 - 1 ALTER TABLE = 1 column = 1 migration file
 - `CREATE TABLE IF NOT EXISTS` は冪等（何度実行しても安全）
 - duplicate column エラー = 既に存在 → skip
+- **"migration ファイルがある" ≠ "カラムが実在する"**
+- deploy 後に `/api/verify` の C11-C13 で schema 実在確認
+- 新カラムを INSERT/UPDATE に追加する場合は **core INSERT + optional UPDATE** パターンを使う
+  - core: 既存カラムのみ（失敗不可）
+  - optional: 新カラム（try-catch、失敗しても本流は壊さない）
+- `POST /api/debug/migrate` で手動 migration 実行可能
 
 ## コードスタイル
 

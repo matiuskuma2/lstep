@@ -216,6 +216,10 @@ Before any implementation task is handed to Codex or executed directly:
 - Run `/api/debug/schema` before writing any ALTER TABLE or INSERT
 - Each ALTER TABLE should be a single column per migration file
 - If migration fails with "duplicate column", the column already exists — skip it
+- **"migration ファイルがある" ≠ "カラムが実在する"** — deploy 後に `/api/verify` の schema チェック（C11-C13）で実在確認すること
+- migration が未適用の場合は `POST /api/debug/migrate` で手動実行可能
+- 新カラムを INSERT/UPDATE に追加する場合、**カラム未存在でも本流が壊れない設計にする**（core INSERT + optional UPDATE パターン）
+- GitHub Actions の `wrangler d1 execute` は `|| true` で失敗を握りつぶすため、成功保証にならない
 
 ### Integration safety
 - Use approach B: LINE Harness DB adapters only, own route handlers
