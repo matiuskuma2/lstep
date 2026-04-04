@@ -337,6 +337,29 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
           schema[(t as any).name] = (cols.results || []).map((c: any) => c.name);
         }
         response = Response.json({ status: 'ok', tables: Object.keys(schema).length, schema });
+      } else if (url.pathname === '/api/debug/migrate' && request.method === 'POST') {
+        // Run pending migrations directly via D1
+        const results: string[] = [];
+        const migrations = [
+          { name: '014_ref_tracking', sql: "CREATE TABLE IF NOT EXISTS ref_tracking (id TEXT PRIMARY KEY, ref_code TEXT NOT NULL, friend_id TEXT, ip_hash TEXT, user_agent TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))" },
+          { name: '014_ref_tracking_idx1', sql: "CREATE INDEX IF NOT EXISTS idx_ref_tracking_ref_code ON ref_tracking(ref_code)" },
+          { name: '014_ref_tracking_idx2', sql: "CREATE INDEX IF NOT EXISTS idx_ref_tracking_ip_hash ON ref_tracking(ip_hash)" },
+          { name: '014_ref_tracking_idx3', sql: "CREATE INDEX IF NOT EXISTS idx_ref_tracking_friend_id ON ref_tracking(friend_id)" },
+          { name: '015_friends_line_account_id', sql: "ALTER TABLE friends ADD COLUMN line_account_id TEXT" },
+        ];
+        for (const m of migrations) {
+          try {
+            await env.DB.prepare(m.sql).run();
+            results.push(`✅ ${m.name}`);
+          } catch (e: any) {
+            if (e.message?.includes('duplicate column')) {
+              results.push(`⏭️ ${m.name} (already exists)`);
+            } else {
+              results.push(`❌ ${m.name}: ${e.message}`);
+            }
+          }
+        }
+        response = Response.json({ status: 'ok', results });
       } else if (url.pathname === '/api/debug/db' && request.method === 'GET') {
         const friends = await env.DB.prepare('SELECT id, tenant_id, display_name, line_user_id, status, is_following FROM friends ORDER BY created_at DESC LIMIT 10').all();
         const accounts = await env.DB.prepare('SELECT id, channel_id, name, is_active FROM line_accounts ORDER BY created_at DESC LIMIT 10').all();
