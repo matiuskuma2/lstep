@@ -175,18 +175,16 @@ app.post('/webhook', async (c) => {
           await env.DB.prepare("UPDATE friends SET line_account_id = ? WHERE id = ?").bind(matchedAccount.id, friendId).run();
         } catch {}
 
-        // Attribution: match ref_code from recent /r/:ref visits (within 30 min, same IP)
+        // Attribution: match ref_code from recent /r/:ref visits
+        // Note: webhook comes from LINE servers, not user's browser, so IP matching won't work.
+        // Instead, use time-based matching: most recent unmatched ref_tracking within 10 minutes.
         try {
-          const ip = c.req.header('cf-connecting-ip') || '';
-          const ipHash = ip ? await hashIp(ip) : null;
-          if (ipHash) {
-            const refMatch = await env.DB.prepare(
-              "SELECT ref_code FROM ref_tracking WHERE ip_hash = ? AND friend_id IS NULL AND created_at > datetime('now', '-30 minutes') ORDER BY created_at DESC LIMIT 1"
-            ).bind(ipHash).first<{ref_code: string}>();
-            if (refMatch) {
-              await env.DB.prepare("UPDATE friends SET ref_code = ? WHERE id = ?").bind(refMatch.ref_code, friendId).run();
-              await env.DB.prepare("UPDATE ref_tracking SET friend_id = ? WHERE ip_hash = ? AND friend_id IS NULL AND created_at > datetime('now', '-30 minutes')").bind(friendId, ipHash).run();
-            }
+          const refMatch = await env.DB.prepare(
+            "SELECT id, ref_code FROM ref_tracking WHERE friend_id IS NULL AND created_at > datetime('now', '-10 minutes') ORDER BY created_at DESC LIMIT 1"
+          ).first<{id: string; ref_code: string}>();
+          if (refMatch) {
+            await env.DB.prepare("UPDATE friends SET ref_code = ? WHERE id = ?").bind(refMatch.ref_code, friendId).run();
+            await env.DB.prepare("UPDATE ref_tracking SET friend_id = ? WHERE id = ?").bind(friendId, refMatch.id).run();
           }
         } catch {}
 
@@ -389,7 +387,7 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
         }
         response = Response.json({ status: 'ok', results });
       } else if (url.pathname === '/api/debug/db' && request.method === 'GET') {
-        const friends = await env.DB.prepare('SELECT id, tenant_id, display_name, line_user_id, status, is_following FROM friends ORDER BY created_at DESC LIMIT 10').all();
+        const friends = await env.DB.prepare('SELECT id, tenant_id, display_name, line_user_id, status, is_following, ref_code, metadata, line_account_id FROM friends ORDER BY created_at DESC LIMIT 10').all();
         const accounts = await env.DB.prepare('SELECT id, channel_id, name, is_active FROM line_accounts ORDER BY created_at DESC LIMIT 10').all();
         const tenants = await env.DB.prepare('SELECT id, name FROM tenants ORDER BY created_at DESC LIMIT 5').all();
         const scenarios = await env.DB.prepare('SELECT id, tenant_id, name, trigger_type, status FROM scenarios ORDER BY created_at DESC LIMIT 10').all();
