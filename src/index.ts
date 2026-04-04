@@ -192,7 +192,7 @@ app.post('/webhook', async (c) => {
 
         // Immediate push (this pattern worked in PR #105)
         try {
-          const stepMsg = await env.DB.prepare("SELECT ss.message_content, ss.scenario_id FROM scenario_steps ss INNER JOIN scenarios s ON ss.scenario_id = s.id WHERE s.trigger_type = 'friend_add' AND s.status IN ('active','draft') AND ss.step_order = 1 LIMIT 1").first<{message_content: string; scenario_id: string}>();
+          const stepMsg = await env.DB.prepare("SELECT ss.message_content, ss.scenario_id FROM scenario_steps ss INNER JOIN scenarios s ON ss.scenario_id = s.id WHERE s.trigger_type = 'friend_add' AND s.status = 'active' AND ss.step_order = 1 ORDER BY s.created_at DESC LIMIT 1").first<{message_content: string; scenario_id: string}>();
           if (stepMsg) {
             await fetch('https://api.line.me/v2/bot/message/push', {
               method: 'POST',
