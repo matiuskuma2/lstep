@@ -188,19 +188,26 @@ app.post('/webhook', async (c) => {
           }
         } catch {}
 
-        // Immediate push (this pattern worked in PR #105)
+        // Immediate push step 1 + enroll for step 2+
         try {
           const stepMsg = await env.DB.prepare("SELECT ss.message_content, ss.scenario_id FROM scenario_steps ss INNER JOIN scenarios s ON ss.scenario_id = s.id WHERE s.trigger_type = 'friend_add' AND s.status = 'active' AND ss.step_order = 1 ORDER BY s.created_at DESC LIMIT 1").first<{message_content: string; scenario_id: string}>();
           if (stepMsg) {
+            // Get friend display_name for variable expansion
+            const friendData = await env.DB.prepare('SELECT display_name FROM friends WHERE id = ?').bind(friendId).first<{display_name: string}>();
+            let msgText = stepMsg.message_content.replace(/\{\{name\}\}/g, friendData?.display_name || '');
+
             await fetch('https://api.line.me/v2/bot/message/push', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + matchedAccount.channel_access_token },
-              body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text: stepMsg.message_content }] }),
+              body: JSON.stringify({ to: lineUserId, messages: [{ type: 'text', text: msgText }] }),
             });
-            // Enrollment for step 2+ via Cron (friendId already resolved above)
+            // Enrollment for step 2+ via Cron
             await env.DB.prepare('DELETE FROM friend_scenarios WHERE friend_id = ?').bind(friendId).run();
             const now2 = new Date().toISOString();
-            const nextDelivery = new Date(Date.now() + 60000).toISOString();
+            // Use step 2's delay_minutes for next_delivery_at
+            const step2 = await env.DB.prepare('SELECT delay_minutes FROM scenario_steps WHERE scenario_id = ? AND step_order = 2 LIMIT 1').bind(stepMsg.scenario_id).first<{delay_minutes: number}>();
+            const delayMs = ((step2?.delay_minutes) || 5) * 60 * 1000;
+            const nextDelivery = new Date(Date.now() + delayMs).toISOString();
             await env.DB.prepare('INSERT INTO friend_scenarios (id, friend_id, scenario_id, current_step_order, status, started_at, next_delivery_at, updated_at) VALUES (?,?,?,?,?,?,?,?)').bind(
               crypto.randomUUID(), friendId, stepMsg.scenario_id, 1, 'active', now2, nextDelivery, now2
             ).run();
@@ -560,26 +567,31 @@ async function scheduled(
           continue;
         }
 
-        const friend = await env.DB.prepare('SELECT line_user_id FROM friends WHERE id = ?').bind(enrollment.friend_id).first<{line_user_id: string}>();
+        const friend = await env.DB.prepare('SELECT line_user_id, display_name FROM friends WHERE id = ?').bind(enrollment.friend_id).first<{line_user_id: string; display_name: string}>();
         if (!friend?.line_user_id) continue;
 
         const account = await env.DB.prepare('SELECT channel_access_token FROM line_accounts WHERE is_active = 1 LIMIT 1').first<{channel_access_token: string}>();
         if (!account) continue;
 
+        // Variable expansion: {{name}} → display_name
+        let msgText = step.message_content;
+        msgText = msgText.replace(/\{\{name\}\}/g, friend.display_name || '');
+
         const pushRes = await fetch('https://api.line.me/v2/bot/message/push', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + account.channel_access_token },
-          body: JSON.stringify({ to: friend.line_user_id, messages: [{ type: 'text', text: step.message_content }] }),
+          body: JSON.stringify({ to: friend.line_user_id, messages: [{ type: 'text', text: msgText }] }),
         });
 
-        try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'CRON_SENT: step=' + nextOrder + ' status=' + pushRes.status + ' msg=' + step.message_content.substring(0, 20), 'cron_debug').run(); } catch {}
+        try { await env.DB.prepare("INSERT INTO ai_execution_logs (id, request_message, intent, created_at) VALUES (?, ?, ?, datetime('now'))").bind(crypto.randomUUID(), 'CRON_SENT: step=' + nextOrder + ' status=' + pushRes.status + ' msg=' + msgText.substring(0, 20), 'cron_debug').run(); } catch {}
 
-        await env.DB.prepare("INSERT INTO messages_log (id, friend_id, direction, message_type, content, scenario_step_id, delivery_type, created_at) VALUES (?,?,?,?,?,?,?,datetime('now'))").bind(crypto.randomUUID(), enrollment.friend_id, 'outgoing', 'text', step.message_content, step.id, 'push').run();
+        await env.DB.prepare("INSERT INTO messages_log (id, friend_id, direction, message_type, content, scenario_step_id, delivery_type, created_at) VALUES (?,?,?,?,?,?,?,datetime('now'))").bind(crypto.randomUUID(), enrollment.friend_id, 'outgoing', 'text', msgText, step.id, 'push').run();
 
         // Check if there's a next step
-        const hasMore = await env.DB.prepare('SELECT id FROM scenario_steps WHERE scenario_id = ? AND step_order = ? LIMIT 1').bind(enrollment.scenario_id, nextOrder + 1).first();
-        if (hasMore) {
-          const nextDelivery = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // 5 min default
+        const nextStep = await env.DB.prepare('SELECT id, delay_minutes FROM scenario_steps WHERE scenario_id = ? AND step_order = ? LIMIT 1').bind(enrollment.scenario_id, nextOrder + 1).first<{id: string; delay_minutes: number}>();
+        if (nextStep) {
+          const delayMs = (nextStep.delay_minutes || 5) * 60 * 1000;
+          const nextDelivery = new Date(Date.now() + delayMs).toISOString();
           await env.DB.prepare("UPDATE friend_scenarios SET current_step_order = ?, next_delivery_at = ?, updated_at = datetime('now') WHERE id = ?").bind(nextOrder, nextDelivery, enrollment.id).run();
         } else {
           await env.DB.prepare("UPDATE friend_scenarios SET current_step_order = ?, status = 'completed', updated_at = datetime('now') WHERE id = ?").bind(nextOrder, enrollment.id).run();
