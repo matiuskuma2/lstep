@@ -10,6 +10,7 @@ export function getShellHtml(activePage: string, content: string): string {
     { id: 'conversions', label: 'CV\u7ba1\u7406', icon: '&#x1f3af;', path: '/dashboard/conversions' },
     { id: 'broadcasts', label: '\u914d\u4fe1\u7ba1\u7406', icon: '&#x1f4e2;', path: '/dashboard/broadcasts' },
     { id: 'forms', label: '\u30d5\u30a9\u30fc\u30e0\u7ba1\u7406', icon: '&#x1f4dd;', path: '/dashboard/forms' },
+    { id: 'lp-variants', label: 'LP\u7ba1\u7406', icon: '&#x1f4c4;', path: '/dashboard/lp-variants' },
     { id: 'entry-routes', label: '\u6d41\u5165\u5143\u7ba1\u7406', icon: '&#x1f6a9;', path: '/dashboard/entry-routes' },
     { id: 'line-accounts', label: 'LINE\u30a2\u30ab\u30a6\u30f3\u30c8', icon: '&#x1f4f1;', path: '/dashboard/line-accounts' },
     { id: 'report', label: '\u30ec\u30dd\u30fc\u30c8', icon: '&#x1f4c8;', path: '/dashboard/report' },
@@ -130,8 +131,11 @@ function requireTenantForCreate() {
 function authHeaders() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }; }
 function logout() { localStorage.removeItem('lchatai_token'); localStorage.removeItem('lchatai_user'); window.location.href = '/login'; }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-async function fetchJson(url) {
-  const r = await fetch(url, { headers: authHeaders() });
+async function fetchJson(url, opts) {
+  const h = authHeaders();
+  const o = opts || {};
+  if (o.body) h['Content-Type'] = 'application/json';
+  const r = await fetch(url, { method: o.method || 'GET', headers: h, body: o.body || undefined });
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return await r.json();
 }

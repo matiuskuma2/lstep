@@ -29,6 +29,7 @@ import { getEntryRoutesPageHtml } from './pages/entry-routes';
 import { getLineAccountsPageHtml } from './pages/line-accounts';
 import { getChatPageHtml } from './pages/chat';
 import { getReportPageHtml } from './pages/report';
+import { getLpVariantsPageHtml } from './pages/lp-variants';
 
 // LINE Harness DB adapters
 import { createLineAccount, getLineAccounts as getLineAccountsList, updateLineAccount, deleteLineAccount } from './line-harness/db/line-accounts.js';
@@ -379,6 +380,9 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
           { name: '014_ref_tracking_idx2', sql: "CREATE INDEX IF NOT EXISTS idx_ref_tracking_ip_hash ON ref_tracking(ip_hash)" },
           { name: '014_ref_tracking_idx3', sql: "CREATE INDEX IF NOT EXISTS idx_ref_tracking_friend_id ON ref_tracking(friend_id)" },
           { name: '015_friends_line_account_id', sql: "ALTER TABLE friends ADD COLUMN line_account_id TEXT" },
+          { name: '016_lp_variants', sql: "CREATE TABLE IF NOT EXISTS lp_variants (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, lp_type TEXT NOT NULL DEFAULT 'internal', html_content TEXT, css_content TEXT, meta_title TEXT, meta_description TEXT, og_image_url TEXT, conversion_point_id TEXT, source_url TEXT, status TEXT NOT NULL DEFAULT 'draft', created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), FOREIGN KEY (tenant_id) REFERENCES tenants(id))" },
+          { name: '016_lp_variants_idx1', sql: "CREATE INDEX IF NOT EXISTS idx_lp_variants_tenant ON lp_variants(tenant_id)" },
+          { name: '016_lp_variants_idx2', sql: "CREATE INDEX IF NOT EXISTS idx_lp_variants_slug ON lp_variants(slug)" },
         ];
         for (const m of migrations) {
           try {
@@ -444,6 +448,8 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
         response = await handleLineAccounts(request, url, env);
       } else if (url.pathname === '/api/ai/logs') {
         response = await handleAiLogs(request, env);
+      } else if (url.pathname === '/api/lp-variants' || url.pathname.startsWith('/api/lp-variants/')) {
+        response = await handleLpVariants(request, url, env);
       } else if (url.pathname === '/api/report/attribution') {
         response = await handleAttributionReport(request, env);
       } else if (url.pathname === '/api/ai/test') {
@@ -517,6 +523,8 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
         response = new Response(getKnowledgePageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/entry-routes') {
         response = new Response(getEntryRoutesPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      } else if (url.pathname === '/dashboard/lp-variants') {
+        response = new Response(getLpVariantsPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/report') {
         response = new Response(getReportPageHtml(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
       } else if (url.pathname === '/dashboard/ai-logs') {
@@ -1275,6 +1283,80 @@ async function handleAiChat(request: Request, env: Env): Promise<Response> {
     try { await logAdapter.record({ tenant_id: tenantId, user_id: auth?.user_id, bot_id: body.bot_id, request_message: body.message, error: String(err) }); } catch {}
     return Response.json({ status: 'error', message: String(err) }, { status: 502 });
   }
+}
+
+// --- LP Variants ---
+async function handleLpVariants(request: Request, url: URL, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+
+  const tenantId = auth.tenant_id;
+  let effectiveTenantId = tenantId;
+  if (!effectiveTenantId) {
+    const t = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
+    effectiveTenantId = t?.id;
+  }
+  if (!effectiveTenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
+
+  // GET /api/lp-variants — list
+  if (url.pathname === '/api/lp-variants' && request.method === 'GET') {
+    const rows = await env.DB.prepare('SELECT lv.*, cp.name as conversion_point_name FROM lp_variants lv LEFT JOIN conversion_points cp ON lv.conversion_point_id = cp.id WHERE lv.tenant_id = ? ORDER BY lv.created_at DESC').bind(effectiveTenantId).all();
+    return Response.json({ status: 'ok', lp_variants: rows.results || [] });
+  }
+
+  // POST /api/lp-variants — create
+  if (url.pathname === '/api/lp-variants' && request.method === 'POST') {
+    let body: any;
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    if (!body.name || !body.slug) return Response.json({ status: 'error', message: 'name and slug are required' }, { status: 400 });
+    const id = crypto.randomUUID();
+    try {
+      await env.DB.prepare(
+        'INSERT INTO lp_variants (id, tenant_id, slug, name, lp_type, html_content, css_content, meta_title, meta_description, conversion_point_id, source_url, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),datetime(\'now\'))'
+      ).bind(id, effectiveTenantId, body.slug, body.name, body.lp_type || 'internal', body.html_content || null, body.css_content || null, body.meta_title || null, body.meta_description || null, body.conversion_point_id || null, body.source_url || null, body.status || 'draft').run();
+      return Response.json({ status: 'ok', lp_variant: { id, slug: body.slug, name: body.name } }, { status: 201 });
+    } catch (e: any) {
+      if (e.message?.includes('UNIQUE constraint')) return Response.json({ status: 'error', message: 'slug already exists' }, { status: 409 });
+      return Response.json({ status: 'error', message: String(e) }, { status: 500 });
+    }
+  }
+
+  // Routes with :id
+  const segments = url.pathname.split('/');
+  const lpId = segments[3];
+  if (!lpId) return Response.json({ error: 'method not allowed' }, { status: 405 });
+
+  // GET /api/lp-variants/:id
+  if (request.method === 'GET') {
+    const row = await env.DB.prepare('SELECT * FROM lp_variants WHERE id = ? AND tenant_id = ?').bind(lpId, effectiveTenantId).first();
+    if (!row) return Response.json({ status: 'error', message: 'Not found' }, { status: 404 });
+    return Response.json({ status: 'ok', lp_variant: row });
+  }
+
+  // PATCH /api/lp-variants/:id
+  if (request.method === 'PATCH') {
+    let body: any;
+    try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+    const fields: string[] = ["updated_at = datetime('now')"];
+    const values: any[] = [];
+    for (const key of ['name', 'slug', 'html_content', 'css_content', 'meta_title', 'meta_description', 'og_image_url', 'conversion_point_id', 'source_url', 'status']) {
+      if (body[key] !== undefined) { fields.push(`${key} = ?`); values.push(body[key]); }
+    }
+    values.push(lpId, effectiveTenantId);
+    await env.DB.prepare(`UPDATE lp_variants SET ${fields.join(', ')} WHERE id = ? AND tenant_id = ?`).bind(...values).run();
+    const updated = await env.DB.prepare('SELECT * FROM lp_variants WHERE id = ?').bind(lpId).first();
+    return Response.json({ status: 'ok', lp_variant: updated });
+  }
+
+  // DELETE /api/lp-variants/:id
+  if (request.method === 'DELETE') {
+    await env.DB.prepare('DELETE FROM lp_variants WHERE id = ? AND tenant_id = ?').bind(lpId, effectiveTenantId).run();
+    return Response.json({ status: 'ok' });
+  }
+
+  return Response.json({ error: 'method not allowed' }, { status: 405 });
 }
 
 // --- Attribution Report ---
