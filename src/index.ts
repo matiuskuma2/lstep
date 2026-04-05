@@ -453,6 +453,8 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
         response = await handleAiLogs(request, env);
       } else if (url.pathname === '/api/lp-variants' || url.pathname.startsWith('/api/lp-variants/')) {
         response = await handleLpVariants(request, url, env);
+      } else if (url.pathname === '/api/lp-import' && request.method === 'POST') {
+        response = await handleLpImport(request, env);
       } else if (url.pathname === '/api/report/attribution') {
         response = await handleAttributionReport(request, env);
       } else if (url.pathname === '/api/ai/test') {
@@ -1385,6 +1387,95 @@ document.querySelectorAll('a[href="#cta"], a[data-cta], .cta-button, [type="subm
 </script>
 </body>
 </html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
+// --- LP Import (URL → internal LP) ---
+async function handleLpImport(request: Request, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+
+  let effectiveTenantId = auth.tenant_id;
+  if (!effectiveTenantId) {
+    const t = await env.DB.prepare('SELECT id FROM tenants LIMIT 1').first<{id: string}>();
+    effectiveTenantId = t?.id;
+  }
+  if (!effectiveTenantId) return Response.json({ status: 'error', message: 'Tenant required' }, { status: 400 });
+
+  let body: any;
+  try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+  if (!body.url) return Response.json({ status: 'error', message: 'url is required' }, { status: 400 });
+
+  try {
+    // Fetch the external LP HTML
+    const res = await fetch(body.url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; lchatAI LP Importer)' },
+    });
+    if (!res.ok) return Response.json({ status: 'error', message: 'Failed to fetch URL: HTTP ' + res.status }, { status: 502 });
+
+    const html = await res.text();
+
+    // Extract useful parts from HTML
+    let title = '';
+    let description = '';
+    let bodyContent = html;
+
+    // Extract <title>
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (titleMatch) title = titleMatch[1].trim();
+
+    // Extract <meta description>
+    const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([\s\S]*?)["']/i);
+    if (descMatch) description = descMatch[1].trim();
+
+    // Extract <body> content
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    if (bodyMatch) bodyContent = bodyMatch[1].trim();
+
+    // Extract <style> tags as CSS
+    let css = '';
+    const styleMatches = html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi);
+    for (const m of styleMatches) {
+      css += m[1] + '\n';
+    }
+
+    // Also extract inline <head> styles (linked CSS can't be inlined easily)
+    // Extract <link rel="stylesheet"> URLs for reference
+    const cssLinks: string[] = [];
+    const linkMatches = html.matchAll(/<link[^>]*rel=["']stylesheet["'][^>]*href=["']([\s\S]*?)["']/gi);
+    for (const m of linkMatches) {
+      cssLinks.push(m[1]);
+    }
+
+    // Generate slug from URL
+    const urlObj = new URL(body.url);
+    let slug = body.slug || urlObj.pathname.replace(/^\/|\/$/g, '').replace(/[^a-zA-Z0-9-]/g, '-') || 'imported-lp';
+    slug = slug.substring(0, 50);
+
+    // Check slug uniqueness
+    const existing = await env.DB.prepare('SELECT id FROM lp_variants WHERE slug = ?').bind(slug).first();
+    if (existing) slug = slug + '-' + Date.now().toString(36);
+
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      'INSERT INTO lp_variants (id, tenant_id, slug, name, lp_type, html_content, css_content, meta_title, meta_description, source_url, status, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime(\'now\'),datetime(\'now\'))'
+    ).bind(id, effectiveTenantId, slug, body.name || title || 'Imported LP', 'internal', bodyContent, css || null, title || null, description || null, body.url, 'draft').run();
+
+    return Response.json({
+      status: 'ok',
+      lp_variant: { id, slug, name: body.name || title, source_url: body.url },
+      extracted: {
+        title,
+        description,
+        css_links: cssLinks,
+        body_length: bodyContent.length,
+        css_length: css.length,
+      }
+    }, { status: 201 });
+  } catch (e: any) {
+    return Response.json({ status: 'error', message: String(e) }, { status: 500 });
+  }
 }
 
 // --- LP Variants ---

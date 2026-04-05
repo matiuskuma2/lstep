@@ -7,6 +7,27 @@ export function getLpVariantsPageHtml(): string {
 
 <div style="display:flex;gap:12px;margin-bottom:20px">
   <button onclick="showCreateForm()" style="padding:8px 16px;background:#06C755;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px">+ 新規LP作成</button>
+  <button onclick="showImportForm()" style="padding:8px 16px;background:#1976d2;color:white;border:none;border-radius:8px;cursor:pointer;font-size:14px">URLから取り込み</button>
+</div>
+
+<div id="importForm" style="display:none;background:white;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1);margin-bottom:20px">
+  <h3 style="margin-bottom:12px;font-size:15px">外部LPをURLから取り込み</h3>
+  <p style="font-size:13px;color:#666;margin-bottom:12px">外部LPのURLを入力すると、HTML/CSS/タイトルを取得して内部LPとして保存します。</p>
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-bottom:12px">
+    <div>
+      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">URL *</label>
+      <input id="importUrl" type="text" placeholder="https://example.com/lp" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px">
+    </div>
+    <div>
+      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">LP名（空欄ならタイトルから自動）</label>
+      <input id="importName" type="text" placeholder="自動取得" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px">
+    </div>
+  </div>
+  <div id="importResult" style="display:none;margin-bottom:12px;padding:10px;border-radius:8px;font-size:13px"></div>
+  <div style="display:flex;gap:8px">
+    <button onclick="importLp()" id="importBtn" style="padding:8px 20px;background:#1976d2;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px">取り込み開始</button>
+    <button onclick="hideImportForm()" style="padding:8px 20px;background:#eee;color:#333;border:none;border-radius:6px;cursor:pointer;font-size:14px">キャンセル</button>
+  </div>
 </div>
 
 <div id="createForm" style="display:none;background:white;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.1);margin-bottom:20px">
@@ -100,8 +121,57 @@ export function getLpVariantsPageHtml(): string {
 </table>
 
 <script>
-function showCreateForm() { document.getElementById('createForm').style.display = 'block'; }
+function showCreateForm() { document.getElementById('createForm').style.display = 'block'; document.getElementById('importForm').style.display = 'none'; }
 function hideCreateForm() { document.getElementById('createForm').style.display = 'none'; }
+function showImportForm() { document.getElementById('importForm').style.display = 'block'; document.getElementById('createForm').style.display = 'none'; }
+function hideImportForm() { document.getElementById('importForm').style.display = 'none'; }
+
+async function importLp() {
+  var url = document.getElementById('importUrl').value.trim();
+  if (!url) { alert('URLを入力してください'); return; }
+  var btn = document.getElementById('importBtn');
+  var result = document.getElementById('importResult');
+  btn.disabled = true;
+  btn.textContent = '取り込み中...';
+  result.style.display = 'none';
+  try {
+    var d = await fetchJson('/api/lp-import', {
+      method: 'POST',
+      body: JSON.stringify({
+        url: url,
+        name: document.getElementById('importName').value || undefined
+      })
+    });
+    if (d.status === 'ok') {
+      result.style.display = 'block';
+      result.style.background = '#e8f5e9';
+      result.style.color = '#2e7d32';
+      var info = d.extracted || {};
+      result.innerHTML = '<b>取り込み成功</b><br>'
+        + 'LP名: ' + esc(d.lp_variant.name) + '<br>'
+        + 'スラッグ: ' + esc(d.lp_variant.slug) + '<br>'
+        + 'タイトル: ' + esc(info.title || '(なし)') + '<br>'
+        + 'HTML: ' + (info.body_length || 0) + '文字 / CSS: ' + (info.css_length || 0) + '文字<br>'
+        + '<a href="/lp/' + esc(d.lp_variant.slug) + '" target="_blank" style="color:#1565c0">プレビュー</a>'
+        + ' | <a href="#" onclick="openEdit(\\'' + esc(d.lp_variant.id) + '\\');return false" style="color:#1565c0">編集</a>';
+      document.getElementById('importUrl').value = '';
+      document.getElementById('importName').value = '';
+      loadLpVariants();
+    } else {
+      result.style.display = 'block';
+      result.style.background = '#ffebee';
+      result.style.color = '#c62828';
+      result.textContent = '取り込み失敗: ' + (d.message || '');
+    }
+  } catch (err) {
+    result.style.display = 'block';
+    result.style.background = '#ffebee';
+    result.style.color = '#c62828';
+    result.textContent = 'エラー: ' + err.message;
+  }
+  btn.disabled = false;
+  btn.textContent = '取り込み開始';
+}
 
 async function loadLpVariants() {
   try {
