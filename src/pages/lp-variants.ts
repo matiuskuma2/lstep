@@ -48,6 +48,46 @@ export function getLpVariantsPageHtml(): string {
   </div>
 </div>
 
+<div id="editModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto">
+  <div style="max-width:700px;margin:40px auto;background:white;border-radius:12px;padding:24px;position:relative">
+    <h3 style="margin-bottom:16px;font-size:16px">LP 編集</h3>
+    <input type="hidden" id="editId">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">LP名</label>
+        <input id="editName" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">スラッグ</label>
+        <input id="editSlug" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">ページタイトル</label>
+        <input id="editTitle" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px">
+      </div>
+      <div>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">元URL</label>
+        <input id="editSourceUrl" type="text" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px">
+      </div>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">HTML コンテンツ</label>
+      <textarea id="editHtml" rows="15" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-family:monospace"></textarea>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">CSS</label>
+      <textarea id="editCss" rows="5" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-family:monospace"></textarea>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button onclick="saveLp()" style="padding:8px 20px;background:#06C755;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px">保存</button>
+      <button onclick="closeEdit()" style="padding:8px 20px;background:#eee;color:#333;border:none;border-radius:6px;cursor:pointer;font-size:14px">キャンセル</button>
+      <a id="editPreviewLink" href="#" target="_blank" style="padding:8px 20px;color:#1565c0;font-size:14px;text-decoration:none;line-height:1.5">プレビュー</a>
+    </div>
+  </div>
+</div>
+
 <table style="width:100%;border-collapse:collapse;background:white;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)">
   <thead><tr style="background:#f5f5f5">
     <th style="padding:10px 14px;text-align:left;font-size:13px">LP名</th>
@@ -83,6 +123,7 @@ async function loadLpVariants() {
         + '<td style="padding:8px 14px;font-size:13px">' + statusBadge + '</td>'
         + '<td style="padding:8px 14px;font-size:13px"><a href="' + lpUrl + '" target="_blank" style="color:#1565c0">' + lpUrl + '</a></td>'
         + '<td style="padding:8px 14px;text-align:right">'
+        + '<button onclick="openEdit(\\'' + esc(lp.id) + '\\')" style="padding:4px 10px;border:1px solid #1976d2;border-radius:4px;cursor:pointer;font-size:12px;color:#1976d2;background:#fff;margin-right:4px">編集</button>'
         + '<button onclick="toggleStatus(\\'' + esc(lp.id) + '\\',\\'' + (lp.status === 'published' ? 'draft' : 'published') + '\\')" style="padding:4px 10px;border:1px solid #ddd;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px">' + (lp.status === 'published' ? '非公開' : '公開') + '</button>'
         + '<button onclick="deleteLp(\\'' + esc(lp.id) + '\\')" style="padding:4px 10px;border:1px solid #ffcdd2;border-radius:4px;cursor:pointer;font-size:12px;color:#c62828;background:#fff">削除</button>'
         + '</td></tr>';
@@ -118,6 +159,54 @@ async function createLp() {
       loadLpVariants();
     } else {
       alert('作成失敗: ' + (d.message || ''));
+    }
+  } catch (err) {
+    alert('エラー: ' + err.message);
+  }
+}
+
+async function openEdit(id) {
+  try {
+    var d = await fetchJson('/api/lp-variants/' + id);
+    if (d.status !== 'ok' || !d.lp_variant) { alert('LP が見つかりません'); return; }
+    var lp = d.lp_variant;
+    document.getElementById('editId').value = lp.id;
+    document.getElementById('editName').value = lp.name || '';
+    document.getElementById('editSlug').value = lp.slug || '';
+    document.getElementById('editTitle').value = lp.meta_title || '';
+    document.getElementById('editSourceUrl').value = lp.source_url || '';
+    document.getElementById('editHtml').value = lp.html_content || '';
+    document.getElementById('editCss').value = lp.css_content || '';
+    document.getElementById('editPreviewLink').href = '/lp/' + lp.slug;
+    document.getElementById('editModal').style.display = 'block';
+  } catch (err) {
+    alert('エラー: ' + err.message);
+  }
+}
+
+function closeEdit() {
+  document.getElementById('editModal').style.display = 'none';
+}
+
+async function saveLp() {
+  var id = document.getElementById('editId').value;
+  try {
+    var d = await fetchJson('/api/lp-variants/' + id, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: document.getElementById('editName').value,
+        slug: document.getElementById('editSlug').value,
+        meta_title: document.getElementById('editTitle').value,
+        source_url: document.getElementById('editSourceUrl').value,
+        html_content: document.getElementById('editHtml').value,
+        css_content: document.getElementById('editCss').value
+      })
+    });
+    if (d.status === 'ok') {
+      closeEdit();
+      loadLpVariants();
+    } else {
+      alert('保存失敗: ' + (d.message || ''));
     }
   } catch (err) {
     alert('エラー: ' + err.message);
