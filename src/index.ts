@@ -1359,18 +1359,19 @@ p{color:#666;font-size:16px;line-height:1.6}
   // Render LP
   const htmlContent = lp.html_content || '<div style="text-align:center;padding:48px"><h1>' + (lp.name || '') + '</h1><p>コンテンツ準備中</p></div>';
   const thanksUrl = '/lp/' + slug + '/thanks' + (clickId ? '?click_id=' + clickId + '&tlid=' + tlid : '');
+  // For imported LPs, add <base> so relative URLs resolve to original domain
+  const baseTag = lp.source_url ? `<base href="${lp.source_url}">` : '';
 
   return new Response(`<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+${baseTag}
 <title>${lp.meta_title || lp.name || 'LP'}</title>
 ${lp.meta_description ? '<meta name="description" content="' + lp.meta_description + '">' : ''}
 ${lp.og_image_url ? '<meta property="og:image" content="' + lp.og_image_url + '">' : ''}
 <style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,sans-serif}
 ${lp.css_content || ''}
 </style>
 </head>

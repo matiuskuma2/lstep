@@ -103,6 +103,7 @@ export function getLpVariantsPageHtml(): string {
     </div>
     <div style="display:flex;gap:8px">
       <button onclick="saveLp()" style="padding:8px 20px;background:#06C755;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px">保存</button>
+      <button onclick="fetchFromUrl()" id="fetchBtn" style="padding:8px 20px;background:#1976d2;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px">元URLから再取得</button>
       <button onclick="closeEdit()" style="padding:8px 20px;background:#eee;color:#333;border:none;border-radius:6px;cursor:pointer;font-size:14px">キャンセル</button>
       <a id="editPreviewLink" href="#" target="_blank" style="padding:8px 20px;color:#1565c0;font-size:14px;text-decoration:none;line-height:1.5">プレビュー</a>
     </div>
@@ -281,6 +282,41 @@ async function saveLp() {
   } catch (err) {
     alert('エラー: ' + err.message);
   }
+}
+
+async function fetchFromUrl() {
+  var url = document.getElementById('editSourceUrl').value.trim();
+  if (!url) { alert('元URLを入力してください'); return; }
+  var btn = document.getElementById('fetchBtn');
+  btn.disabled = true;
+  btn.textContent = '取得中...';
+  try {
+    var d = await fetchJson('/api/lp-import', {
+      method: 'POST',
+      body: JSON.stringify({ url: url, name: document.getElementById('editName').value || undefined })
+    });
+    if (d.status === 'ok' && d.lp_variant) {
+      // Load the newly created LP into the edit form
+      var newLp = await fetchJson('/api/lp-variants/' + d.lp_variant.id);
+      if (newLp.status === 'ok' && newLp.lp_variant) {
+        document.getElementById('editId').value = newLp.lp_variant.id;
+        document.getElementById('editName').value = newLp.lp_variant.name || '';
+        document.getElementById('editSlug').value = newLp.lp_variant.slug || '';
+        document.getElementById('editTitle').value = newLp.lp_variant.meta_title || '';
+        document.getElementById('editHtml').value = newLp.lp_variant.html_content || '';
+        document.getElementById('editCss').value = newLp.lp_variant.css_content || '';
+        document.getElementById('editPreviewLink').href = '/lp/' + newLp.lp_variant.slug;
+        alert('取得しました。内容を確認して保存してください。');
+        loadLpVariants();
+      }
+    } else {
+      alert('取得失敗: ' + (d.message || ''));
+    }
+  } catch (err) {
+    alert('エラー: ' + err.message);
+  }
+  btn.disabled = false;
+  btn.textContent = '元URLから再取得';
 }
 
 async function toggleStatus(id, newStatus) {
