@@ -455,6 +455,8 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
         response = await handleLpVariants(request, url, env);
       } else if (url.pathname === '/api/lp-import' && request.method === 'POST') {
         response = await handleLpImport(request, env);
+      } else if (url.pathname === '/api/lp-fetch' && request.method === 'POST') {
+        response = await handleLpFetch(request, env);
       } else if (url.pathname === '/api/report/attribution') {
         response = await handleAttributionReport(request, env);
       } else if (url.pathname === '/api/ai/test') {
@@ -1396,6 +1398,75 @@ document.querySelectorAll('a[href="#cta"], a[data-cta], .cta-button, [type="subm
 </script>
 </body>
 </html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
+// --- LP Fetch (URL → content only, no DB write) ---
+async function handleLpFetch(request: Request, env: Env): Promise<Response> {
+  if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
+  const auth = await extractAuth(request, env.DB, env.ADMIN_JWT_SECRET);
+  const denied = requireRole(auth, 'super_admin', 'admin');
+  if (denied) return denied;
+
+  let body: any;
+  try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
+  if (!body.url) return Response.json({ status: 'error', message: 'url is required' }, { status: 400 });
+
+  try {
+    const res = await fetch(body.url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+    });
+    if (!res.ok) return Response.json({ status: 'error', message: 'Failed to fetch: HTTP ' + res.status }, { status: 502 });
+
+    const html = await res.text();
+
+    // Extract title
+    let title = '';
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (titleMatch) title = titleMatch[1].trim();
+
+    // Extract meta description
+    let description = '';
+    const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([\s\S]*?)["']/i);
+    if (descMatch) description = descMatch[1].trim();
+
+    // Extract body
+    let bodyContent = html;
+    const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    if (bodyMatch) bodyContent = bodyMatch[1].trim();
+
+    // Extract inline styles
+    let css = '';
+    const styleMatches = html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi);
+    for (const m of styleMatches) {
+      css += m[1] + '\n';
+    }
+
+    // Fetch external CSS and inline
+    const linkMatches = html.matchAll(/<link[^>]*rel=["']stylesheet["'][^>]*href=["']([^"']+)["']/gi);
+    for (const m of linkMatches) {
+      let cssUrl = m[1];
+      if (!cssUrl.startsWith('http')) {
+        try { cssUrl = new URL(cssUrl, body.url).href; } catch {}
+      }
+      try {
+        const cssRes = await fetch(cssUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        if (cssRes.ok) {
+          css += '\n/* from: ' + cssUrl + ' */\n' + (await cssRes.text()) + '\n';
+        }
+      } catch {}
+    }
+
+    return Response.json({
+      status: 'ok',
+      title,
+      description,
+      html_content: bodyContent,
+      css_content: css,
+      source_url: body.url,
+    });
+  } catch (e: any) {
+    return Response.json({ status: 'error', message: String(e) }, { status: 500 });
+  }
 }
 
 // --- LP Import (URL → internal LP) ---

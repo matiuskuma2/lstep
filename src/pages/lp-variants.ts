@@ -288,28 +288,18 @@ async function fetchFromUrl() {
   var url = document.getElementById('editSourceUrl').value.trim();
   if (!url) { alert('元URLを入力してください'); return; }
   var btn = document.getElementById('fetchBtn');
-  var id = document.getElementById('editId').value;
   btn.disabled = true;
   btn.textContent = '取得中...';
   try {
-    // Fetch HTML via import API but don't create new LP — use a temp import then update existing
-    var d = await fetchJson('/api/lp-import', {
+    var d = await fetchJson('/api/lp-fetch', {
       method: 'POST',
       body: JSON.stringify({ url: url })
     });
-    if (d.status === 'ok' && d.lp_variant) {
-      // Get the imported content
-      var imported = await fetchJson('/api/lp-variants/' + d.lp_variant.id);
-      if (imported.status === 'ok' && imported.lp_variant) {
-        // Copy content to current edit form
-        document.getElementById('editHtml').value = imported.lp_variant.html_content || '';
-        document.getElementById('editCss').value = imported.lp_variant.css_content || '';
-        if (imported.lp_variant.meta_title) document.getElementById('editTitle').value = imported.lp_variant.meta_title;
-        // Delete the temporary LP
-        try { await fetchJson('/api/lp-variants/' + d.lp_variant.id, { method: 'DELETE' }); } catch(e) {}
-        alert('取得しました。内容を確認して「保存」を押してください。');
-        loadLpVariants();
-      }
+    if (d.status === 'ok') {
+      document.getElementById('editHtml').value = d.html_content || '';
+      document.getElementById('editCss').value = d.css_content || '';
+      if (d.title) document.getElementById('editTitle').value = d.title;
+      alert('取得しました。内容を確認して「保存」を押してください。');
     } else {
       alert('取得失敗: ' + (d.message || ''));
     }
