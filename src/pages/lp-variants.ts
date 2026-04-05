@@ -288,25 +288,26 @@ async function fetchFromUrl() {
   var url = document.getElementById('editSourceUrl').value.trim();
   if (!url) { alert('元URLを入力してください'); return; }
   var btn = document.getElementById('fetchBtn');
+  var id = document.getElementById('editId').value;
   btn.disabled = true;
   btn.textContent = '取得中...';
   try {
+    // Fetch HTML via import API but don't create new LP — use a temp import then update existing
     var d = await fetchJson('/api/lp-import', {
       method: 'POST',
-      body: JSON.stringify({ url: url, name: document.getElementById('editName').value || undefined })
+      body: JSON.stringify({ url: url })
     });
     if (d.status === 'ok' && d.lp_variant) {
-      // Load the newly created LP into the edit form
-      var newLp = await fetchJson('/api/lp-variants/' + d.lp_variant.id);
-      if (newLp.status === 'ok' && newLp.lp_variant) {
-        document.getElementById('editId').value = newLp.lp_variant.id;
-        document.getElementById('editName').value = newLp.lp_variant.name || '';
-        document.getElementById('editSlug').value = newLp.lp_variant.slug || '';
-        document.getElementById('editTitle').value = newLp.lp_variant.meta_title || '';
-        document.getElementById('editHtml').value = newLp.lp_variant.html_content || '';
-        document.getElementById('editCss').value = newLp.lp_variant.css_content || '';
-        document.getElementById('editPreviewLink').href = '/lp/' + newLp.lp_variant.slug;
-        alert('取得しました。内容を確認して保存してください。');
+      // Get the imported content
+      var imported = await fetchJson('/api/lp-variants/' + d.lp_variant.id);
+      if (imported.status === 'ok' && imported.lp_variant) {
+        // Copy content to current edit form
+        document.getElementById('editHtml').value = imported.lp_variant.html_content || '';
+        document.getElementById('editCss').value = imported.lp_variant.css_content || '';
+        if (imported.lp_variant.meta_title) document.getElementById('editTitle').value = imported.lp_variant.meta_title;
+        // Delete the temporary LP
+        try { await fetchJson('/api/lp-variants/' + d.lp_variant.id, { method: 'DELETE' }); } catch(e) {}
+        alert('取得しました。内容を確認して「保存」を押してください。');
         loadLpVariants();
       }
     } else {

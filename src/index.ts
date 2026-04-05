@@ -1359,8 +1359,16 @@ p{color:#666;font-size:16px;line-height:1.6}
   // Render LP
   const htmlContent = lp.html_content || '<div style="text-align:center;padding:48px"><h1>' + (lp.name || '') + '</h1><p>コンテンツ準備中</p></div>';
   const thanksUrl = '/lp/' + slug + '/thanks' + (clickId ? '?click_id=' + clickId + '&tlid=' + tlid : '');
-  // For imported LPs, add <base> so relative URLs resolve to original domain
-  const baseTag = lp.source_url ? `<base href="${lp.source_url}">` : '';
+  // For imported LPs, add <base> so relative URLs (images, CSS) resolve to original domain
+  let baseTag = '';
+  if (lp.source_url) {
+    try {
+      const srcUrl = new URL(lp.source_url);
+      // Use directory path so relative URLs like "images/foo.jpg" resolve correctly
+      const basePath = srcUrl.pathname.endsWith('/') ? srcUrl.pathname : srcUrl.pathname.replace(/\/[^\/]*$/, '/');
+      baseTag = `<base href="${srcUrl.origin}${basePath}">`;
+    } catch { baseTag = `<base href="${lp.source_url}">`; }
+  }
 
   return new Response(`<!DOCTYPE html>
 <html lang="ja">
@@ -1441,12 +1449,24 @@ async function handleLpImport(request: Request, env: Env): Promise<Response> {
       css += m[1] + '\n';
     }
 
-    // Also extract inline <head> styles (linked CSS can't be inlined easily)
-    // Extract <link rel="stylesheet"> URLs for reference
+    // Fetch external CSS files and inline them
     const cssLinks: string[] = [];
     const linkMatches = html.matchAll(/<link[^>]*rel=["']stylesheet["'][^>]*href=["']([\s\S]*?)["']/gi);
     for (const m of linkMatches) {
-      cssLinks.push(m[1]);
+      let cssUrl = m[1];
+      // Resolve relative URLs
+      if (!cssUrl.startsWith('http')) {
+        try { cssUrl = new URL(cssUrl, body.url).href; } catch {}
+      }
+      cssLinks.push(cssUrl);
+      // Try to fetch and inline the CSS
+      try {
+        const cssRes = await fetch(cssUrl, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; lchatAI LP Importer)' } });
+        if (cssRes.ok) {
+          const cssText = await cssRes.text();
+          css += '\n/* from: ' + cssUrl + ' */\n' + cssText + '\n';
+        }
+      } catch {}
     }
 
     // Generate slug from URL
