@@ -13,6 +13,60 @@
 - step_id
 - conversion_point_code
 
+## 重要な方針
+
+### 外部LP import = 下書き化（素材取り込み）
+- 外部LPの「完全再現」は目的ではない
+- HTML fetch 方式では JS依存・相対パス・外部CSS依存の LP は崩れる
+- import は「素材取り込み」として割り切る
+- 取り込める要素: title, body HTML, inline CSS, 外部CSS（fetch可能な範囲）
+- 取り込めない要素: JS依存レイアウト, 動的コンテンツ, 認証付き素材
+
+### 内部LPテンプレート = 本番利用
+- 取り込んだ素材を自前テンプレートに再構成
+- tracked link / CV / thank-you / server-side 計測を組み込める
+- こちらが本番利用向け
+
+## 内部LPテンプレート
+
+### テンプレート構造
+```
+LP = ヘッダー + セクション[] + CTA + フッター
+
+セクション:
+  - hero: メインビジュアル（画像 + キャッチコピー）
+  - problem: 課題提起（テキスト + 画像）
+  - solution: 解決策（テキスト + 画像）
+  - testimonial: お客様の声
+  - features: 特徴・メリット（カード形式）
+  - campaign: キャンペーン情報
+  - form: 問い合わせフォーム
+  - cta: CTA ボタン（tracked link 付き）
+```
+
+### テンプレートデータモデル
+```json
+{
+  "sections": [
+    { "type": "hero", "image_url": "...", "headline": "...", "subheadline": "..." },
+    { "type": "problem", "title": "...", "items": ["...", "..."] },
+    { "type": "solution", "title": "...", "content": "..." },
+    { "type": "cta", "label": "無料相談はこちら", "link": "#form" }
+  ],
+  "theme": {
+    "primary_color": "#06C755",
+    "font_family": "sans-serif"
+  }
+}
+```
+
+### 外部LPから取り込む最小要素
+1. **title** — ページタイトル
+2. **hero image** — メインビジュアル画像URL
+3. **body blocks** — セクションごとのテキスト
+4. **CTA** — ボタンテキスト + リンク先
+5. **form link** — フォーム送信先URL
+
 ## アーキテクチャ
 
 ```

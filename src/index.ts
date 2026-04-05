@@ -386,6 +386,7 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
           { name: '017_lp_views', sql: "CREATE TABLE IF NOT EXISTS lp_views (id TEXT PRIMARY KEY, lp_variant_id TEXT NOT NULL, click_id TEXT, tracked_link_id TEXT, friend_ref TEXT, user_agent TEXT, ip_hash TEXT, viewed_at TEXT NOT NULL DEFAULT (datetime('now')))" },
           { name: '017_lp_views_idx1', sql: "CREATE INDEX IF NOT EXISTS idx_lp_views_variant ON lp_views(lp_variant_id)" },
           { name: '017_lp_views_idx2', sql: "CREATE INDEX IF NOT EXISTS idx_lp_views_click ON lp_views(click_id)" },
+          { name: '018_lp_template_data', sql: "ALTER TABLE lp_variants ADD COLUMN template_data TEXT" },
         ];
         for (const m of migrations) {
           try {
@@ -1359,14 +1360,22 @@ p{color:#666;font-size:16px;line-height:1.6}
   } catch {}
 
   // Render LP
-  const htmlContent = lp.html_content || '<div style="text-align:center;padding:48px"><h1>' + (lp.name || '') + '</h1><p>コンテンツ準備中</p></div>';
   const thanksUrl = '/lp/' + slug + '/thanks' + (clickId ? '?click_id=' + clickId + '&tlid=' + tlid : '');
-  // For imported LPs, add <base> so relative URLs (images, CSS) resolve to original domain
+
+  // Template-based rendering (preferred) vs raw HTML
+  let templateData: any = null;
+  try { if (lp.template_data) templateData = JSON.parse(lp.template_data); } catch {}
+
+  if (templateData && templateData.sections) {
+    return new Response(renderLpTemplate(lp, templateData, thanksUrl), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  }
+
+  // Fallback: raw HTML rendering (for imported LPs)
+  const htmlContent = lp.html_content || '<div style="text-align:center;padding:48px"><h1>' + (lp.name || '') + '</h1><p>コンテンツ準備中</p></div>';
   let baseTag = '';
   if (lp.source_url) {
     try {
       const srcUrl = new URL(lp.source_url);
-      // Use directory path so relative URLs like "images/foo.jpg" resolve correctly
       const basePath = srcUrl.pathname.endsWith('/') ? srcUrl.pathname : srcUrl.pathname.replace(/\/[^\/]*$/, '/');
       baseTag = `<base href="${srcUrl.origin}${basePath}">`;
     } catch { baseTag = `<base href="${lp.source_url}">`; }
@@ -1380,7 +1389,6 @@ p{color:#666;font-size:16px;line-height:1.6}
 ${baseTag}
 <title>${lp.meta_title || lp.name || 'LP'}</title>
 ${lp.meta_description ? '<meta name="description" content="' + lp.meta_description + '">' : ''}
-${lp.og_image_url ? '<meta property="og:image" content="' + lp.og_image_url + '">' : ''}
 <style>
 ${lp.css_content || ''}
 </style>
@@ -1388,7 +1396,6 @@ ${lp.css_content || ''}
 <body>
 ${htmlContent}
 <script>
-// Replace all CTA links/forms with thanks URL
 document.querySelectorAll('a[href="#cta"], a[data-cta], .cta-button, [type="submit"]').forEach(function(el) {
   el.addEventListener('click', function(e) {
     e.preventDefault();
@@ -1626,7 +1633,7 @@ async function handleLpVariants(request: Request, url: URL, env: Env): Promise<R
     try { body = await request.json(); } catch { return Response.json({ status: 'error', message: 'Invalid JSON' }, { status: 400 }); }
     const fields: string[] = ["updated_at = datetime('now')"];
     const values: any[] = [];
-    for (const key of ['name', 'slug', 'html_content', 'css_content', 'meta_title', 'meta_description', 'og_image_url', 'conversion_point_id', 'source_url', 'status']) {
+    for (const key of ['name', 'slug', 'html_content', 'css_content', 'meta_title', 'meta_description', 'og_image_url', 'conversion_point_id', 'source_url', 'status', 'template_data']) {
       if (body[key] !== undefined) { fields.push(`${key} = ?`); values.push(body[key]); }
     }
     values.push(lpId, effectiveTenantId);
@@ -1873,6 +1880,103 @@ function getLoginHtml(): string {
 }
 
 // getChatHtml moved to src/pages/chat.ts as getChatPageHtml
+
+function renderLpTemplate(lp: any, data: any, thanksUrl: string): string {
+  const theme = data.theme || {};
+  const primary = theme.primary_color || '#06C755';
+  const font = theme.font_family || "-apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif";
+
+  let sections = '';
+  for (const s of (data.sections || [])) {
+    switch (s.type) {
+      case 'hero':
+        sections += `<section style="position:relative;text-align:center;overflow:hidden">
+          ${s.image_url ? `<img src="${s.image_url}" style="width:100%;display:block" alt="">` : ''}
+          <div style="position:${s.image_url ? 'absolute;top:50%;left:50%;transform:translate(-50%,-50%)' : 'relative;padding:60px 20px'};color:${s.image_url ? 'white;text-shadow:0 2px 8px rgba(0,0,0,.5)' : '#333'}">
+            ${s.headline ? `<h1 style="font-size:clamp(24px,5vw,42px);font-weight:800;margin-bottom:12px">${s.headline}</h1>` : ''}
+            ${s.subheadline ? `<p style="font-size:clamp(14px,2.5vw,20px)">${s.subheadline}</p>` : ''}
+          </div>
+        </section>`;
+        break;
+      case 'problem':
+        sections += `<section style="padding:48px 20px;max-width:800px;margin:0 auto">
+          ${s.title ? `<h2 style="font-size:24px;font-weight:700;text-align:center;margin-bottom:24px;color:${primary}">${s.title}</h2>` : ''}
+          ${(s.items || []).map((item: string) => `<div style="padding:12px 0;border-bottom:1px solid #eee;font-size:16px;line-height:1.8">${item}</div>`).join('')}
+        </section>`;
+        break;
+      case 'solution':
+        sections += `<section style="padding:48px 20px;background:#f8f9fa;text-align:center">
+          <div style="max-width:800px;margin:0 auto">
+            ${s.title ? `<h2 style="font-size:24px;font-weight:700;margin-bottom:16px;color:${primary}">${s.title}</h2>` : ''}
+            ${s.content ? `<p style="font-size:16px;line-height:1.8;color:#555">${s.content}</p>` : ''}
+            ${s.image_url ? `<img src="${s.image_url}" style="max-width:100%;margin-top:24px;border-radius:12px" alt="">` : ''}
+          </div>
+        </section>`;
+        break;
+      case 'testimonial':
+        sections += `<section style="padding:48px 20px;max-width:800px;margin:0 auto">
+          ${s.title ? `<h2 style="font-size:24px;font-weight:700;text-align:center;margin-bottom:24px">${s.title}</h2>` : ''}
+          ${(s.items || []).map((item: any) => `<div style="background:white;padding:20px;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:16px">
+            <p style="font-size:15px;line-height:1.8;color:#444">${typeof item === 'string' ? item : item.text || ''}</p>
+            ${item.name ? `<p style="font-size:13px;color:#999;margin-top:8px;text-align:right">— ${item.name}</p>` : ''}
+          </div>`).join('')}
+        </section>`;
+        break;
+      case 'features':
+        sections += `<section style="padding:48px 20px;max-width:900px;margin:0 auto">
+          ${s.title ? `<h2 style="font-size:24px;font-weight:700;text-align:center;margin-bottom:24px;color:${primary}">${s.title}</h2>` : ''}
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px">
+            ${(s.items || []).map((item: any) => `<div style="background:white;padding:24px;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08)">
+              ${item.icon ? `<div style="font-size:32px;margin-bottom:12px">${item.icon}</div>` : ''}
+              <h3 style="font-size:16px;font-weight:600;margin-bottom:8px">${item.title || ''}</h3>
+              <p style="font-size:14px;color:#666;line-height:1.6">${item.description || ''}</p>
+            </div>`).join('')}
+          </div>
+        </section>`;
+        break;
+      case 'campaign':
+        sections += `<section style="padding:48px 20px;background:${primary};color:white;text-align:center">
+          <div style="max-width:600px;margin:0 auto">
+            ${s.title ? `<h2 style="font-size:28px;font-weight:800;margin-bottom:12px">${s.title}</h2>` : ''}
+            ${s.content ? `<p style="font-size:16px;line-height:1.6;opacity:.9">${s.content}</p>` : ''}
+          </div>
+        </section>`;
+        break;
+      case 'cta':
+        sections += `<section style="padding:48px 20px;text-align:center">
+          <a href="${thanksUrl}" style="display:inline-block;padding:18px 48px;background:${primary};color:white;text-decoration:none;border-radius:50px;font-size:18px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,.15)">${s.label || 'お申し込みはこちら'}</a>
+        </section>`;
+        break;
+      case 'text':
+        sections += `<section style="padding:32px 20px;max-width:800px;margin:0 auto">
+          ${s.title ? `<h2 style="font-size:22px;font-weight:700;margin-bottom:16px">${s.title}</h2>` : ''}
+          ${s.content ? `<div style="font-size:15px;line-height:1.8;color:#444">${s.content}</div>` : ''}
+        </section>`;
+        break;
+    }
+  }
+
+  return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${lp.meta_title || lp.name || 'LP'}</title>
+${lp.meta_description ? `<meta name="description" content="${lp.meta_description}">` : ''}
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:${font};color:#333}
+img{max-width:100%;height:auto}
+</style>
+</head>
+<body>
+${sections}
+<footer style="padding:24px;text-align:center;font-size:12px;color:#999;background:#f5f5f5">
+  &copy; ${new Date().getFullYear()}
+</footer>
+</body>
+</html>`;
+}
 
 async function hashIp(ip: string): Promise<string> {
   const data = new TextEncoder().encode(ip);

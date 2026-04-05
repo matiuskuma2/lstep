@@ -94,12 +94,23 @@ export function getLpVariantsPageHtml(): string {
       </div>
     </div>
     <div style="margin-bottom:12px">
-      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">HTML コンテンツ</label>
-      <textarea id="editHtml" rows="15" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-family:monospace"></textarea>
-    </div>
-    <div style="margin-bottom:12px">
-      <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">CSS</label>
-      <textarea id="editCss" rows="5" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-family:monospace"></textarea>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <button onclick="showEditTab('template')" id="tabTemplate" style="padding:4px 12px;border:1px solid #ddd;border-radius:4px;cursor:pointer;font-size:12px;background:#e3f2fd;color:#1565c0">テンプレート編集</button>
+        <button onclick="showEditTab('raw')" id="tabRaw" style="padding:4px 12px;border:1px solid #ddd;border-radius:4px;cursor:pointer;font-size:12px">HTML/CSS 直接編集</button>
+      </div>
+      <div id="templateTab">
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">テンプレートデータ (JSON)</label>
+        <textarea id="editTemplate" rows="15" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-family:monospace" placeholder='{"sections":[{"type":"hero","headline":"見出し","image_url":"https://..."},{"type":"cta","label":"お申し込み"}]}'></textarea>
+        <div style="font-size:11px;color:#999;margin-top:4px">
+          セクション type: hero, problem, solution, testimonial, features, campaign, cta, text
+        </div>
+      </div>
+      <div id="rawTab" style="display:none">
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px">HTML コンテンツ</label>
+        <textarea id="editHtml" rows="10" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-family:monospace"></textarea>
+        <label style="font-size:12px;color:#666;display:block;margin-bottom:4px;margin-top:8px">CSS</label>
+        <textarea id="editCss" rows="5" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:13px;font-family:monospace"></textarea>
+      </div>
     </div>
     <div style="display:flex;gap:8px">
       <button onclick="saveLp()" style="padding:8px 20px;background:#06C755;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px">保存</button>
@@ -236,6 +247,15 @@ async function createLp() {
   }
 }
 
+function showEditTab(tab) {
+  document.getElementById('templateTab').style.display = tab === 'template' ? 'block' : 'none';
+  document.getElementById('rawTab').style.display = tab === 'raw' ? 'block' : 'none';
+  document.getElementById('tabTemplate').style.background = tab === 'template' ? '#e3f2fd' : '#fff';
+  document.getElementById('tabTemplate').style.color = tab === 'template' ? '#1565c0' : '#333';
+  document.getElementById('tabRaw').style.background = tab === 'raw' ? '#e3f2fd' : '#fff';
+  document.getElementById('tabRaw').style.color = tab === 'raw' ? '#1565c0' : '#333';
+}
+
 async function openEdit(id) {
   try {
     var d = await fetchJson('/api/lp-variants/' + id);
@@ -248,7 +268,10 @@ async function openEdit(id) {
     document.getElementById('editSourceUrl').value = lp.source_url || '';
     document.getElementById('editHtml').value = lp.html_content || '';
     document.getElementById('editCss').value = lp.css_content || '';
+    document.getElementById('editTemplate').value = lp.template_data || '';
     document.getElementById('editPreviewLink').href = '/lp/' + lp.slug;
+    // Show template tab if template_data exists, otherwise raw
+    showEditTab(lp.template_data ? 'template' : 'raw');
     document.getElementById('editModal').style.display = 'block';
   } catch (err) {
     alert('エラー: ' + err.message);
@@ -270,7 +293,8 @@ async function saveLp() {
         meta_title: document.getElementById('editTitle').value,
         source_url: document.getElementById('editSourceUrl').value,
         html_content: document.getElementById('editHtml').value,
-        css_content: document.getElementById('editCss').value
+        css_content: document.getElementById('editCss').value,
+        template_data: document.getElementById('editTemplate').value || null
       })
     });
     if (d.status === 'ok') {
