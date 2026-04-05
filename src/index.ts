@@ -383,6 +383,9 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
           { name: '016_lp_variants', sql: "CREATE TABLE IF NOT EXISTS lp_variants (id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, lp_type TEXT NOT NULL DEFAULT 'internal', html_content TEXT, css_content TEXT, meta_title TEXT, meta_description TEXT, og_image_url TEXT, conversion_point_id TEXT, source_url TEXT, status TEXT NOT NULL DEFAULT 'draft', created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now')), FOREIGN KEY (tenant_id) REFERENCES tenants(id))" },
           { name: '016_lp_variants_idx1', sql: "CREATE INDEX IF NOT EXISTS idx_lp_variants_tenant ON lp_variants(tenant_id)" },
           { name: '016_lp_variants_idx2', sql: "CREATE INDEX IF NOT EXISTS idx_lp_variants_slug ON lp_variants(slug)" },
+          { name: '017_lp_views', sql: "CREATE TABLE IF NOT EXISTS lp_views (id TEXT PRIMARY KEY, lp_variant_id TEXT NOT NULL, click_id TEXT, tracked_link_id TEXT, friend_ref TEXT, user_agent TEXT, ip_hash TEXT, viewed_at TEXT NOT NULL DEFAULT (datetime('now')))" },
+          { name: '017_lp_views_idx1', sql: "CREATE INDEX IF NOT EXISTS idx_lp_views_variant ON lp_views(lp_variant_id)" },
+          { name: '017_lp_views_idx2', sql: "CREATE INDEX IF NOT EXISTS idx_lp_views_click ON lp_views(click_id)" },
         ];
         for (const m of migrations) {
           try {
@@ -493,6 +496,8 @@ async function legacyFetch(request: Request, env: Env): Promise<Response> {
           } catch {}
         }
         response = new Response(`<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${botName}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Hiragino Sans',system-ui,sans-serif;background:#0d1117;color:#fff;display:flex;justify-content:center;align-items:center;min-height:100vh}.card{text-align:center;max-width:400px;width:90%;padding:48px 24px}h1{font-size:28px;font-weight:800;margin-bottom:8px}.sub{font-size:14px;color:rgba(255,255,255,0.5);margin-bottom:40px}.btn{display:block;width:100%;padding:18px;border:none;border-radius:12px;font-size:18px;font-weight:700;text-decoration:none;text-align:center;color:#fff;background:#06C755}.note{font-size:12px;color:rgba(255,255,255,0.3);margin-top:24px;line-height:1.6}</style></head><body><div class="card"><h1>${botName}</h1><p class="sub">${ref}</p><a href="${lineUrl}" class="btn">LINEで友だち追加する</a><p class="note">友だち追加するだけで体験できます</p></div></body></html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+      } else if (url.pathname.startsWith('/lp/')) {
+        response = await handleLpRender(request, url, env);
       } else if (url.pathname.startsWith('/t/')) {
         response = await handleRedirect(request, url, env);
       } else if (url.pathname === '/chat') {
@@ -1285,6 +1290,103 @@ async function handleAiChat(request: Request, env: Env): Promise<Response> {
   }
 }
 
+// --- LP Render (public) ---
+async function handleLpRender(request: Request, url: URL, env: Env): Promise<Response> {
+  const pathParts = url.pathname.split('/').filter(Boolean); // ['lp', 'slug'] or ['lp', 'slug', 'thanks']
+  const slug = pathParts[1];
+  if (!slug) return Response.json({ error: 'missing slug' }, { status: 400 });
+  const isThanks = pathParts[2] === 'thanks';
+
+  const lp = await env.DB.prepare('SELECT * FROM lp_variants WHERE slug = ? AND status = ?').bind(slug, 'published').first<any>();
+  if (!lp) return new Response('<!DOCTYPE html><html><head><title>Not Found</title></head><body><h1>ページが見つかりません</h1></body></html>', { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+
+  const clickId = url.searchParams.get('click_id') || '';
+  const tlid = url.searchParams.get('tlid') || '';
+
+  if (isThanks) {
+    // Record conversion
+    try {
+      if (lp.conversion_point_id) {
+        // Try to find friend from click
+        let friendId: string | null = null;
+        if (clickId) {
+          const click = await env.DB.prepare('SELECT lc.tracked_link_id FROM link_clicks lc WHERE lc.id = ?').bind(clickId).first<any>();
+          if (click) {
+            // link_clicks doesn't have friend_id, but we can record what we have
+          }
+        }
+        await env.DB.prepare(
+          "INSERT INTO conversion_events (id, conversion_point_id, friend_id, metadata, created_at) VALUES (?,?,?,?,datetime('now'))"
+        ).bind(crypto.randomUUID(), lp.conversion_point_id, friendId, JSON.stringify({ click_id: clickId, tracked_link_id: tlid, lp_slug: slug })).run();
+      }
+    } catch {}
+
+    return new Response(`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${lp.meta_title || lp.name} - ありがとうございます</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh}
+.card{background:white;padding:48px 32px;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,.1);text-align:center;max-width:480px;width:90%}
+h1{color:#06C755;font-size:28px;margin-bottom:12px}
+p{color:#666;font-size:16px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>ありがとうございます！</h1>
+<p>お申し込みを受け付けました。<br>担当者よりご連絡いたします。</p>
+</div>
+</body>
+</html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  }
+
+  // Record LP view
+  try {
+    const ua = request.headers.get('user-agent') || '';
+    const ip = request.headers.get('cf-connecting-ip') || '';
+    const ipHash = ip ? await hashIp(ip) : null;
+    await env.DB.prepare(
+      "INSERT INTO lp_views (id, lp_variant_id, click_id, tracked_link_id, friend_ref, user_agent, ip_hash, viewed_at) VALUES (?,?,?,?,?,?,?,datetime('now'))"
+    ).bind(crypto.randomUUID(), lp.id, clickId || null, tlid || null, null, ua, ipHash).run();
+  } catch {}
+
+  // Render LP
+  const htmlContent = lp.html_content || '<div style="text-align:center;padding:48px"><h1>' + (lp.name || '') + '</h1><p>コンテンツ準備中</p></div>';
+  const thanksUrl = '/lp/' + slug + '/thanks' + (clickId ? '?click_id=' + clickId + '&tlid=' + tlid : '');
+
+  return new Response(`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${lp.meta_title || lp.name || 'LP'}</title>
+${lp.meta_description ? '<meta name="description" content="' + lp.meta_description + '">' : ''}
+${lp.og_image_url ? '<meta property="og:image" content="' + lp.og_image_url + '">' : ''}
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+${lp.css_content || ''}
+</style>
+</head>
+<body>
+${htmlContent}
+<script>
+// Replace all CTA links/forms with thanks URL
+document.querySelectorAll('a[href="#cta"], a[data-cta], .cta-button, [type="submit"]').forEach(function(el) {
+  el.addEventListener('click', function(e) {
+    e.preventDefault();
+    window.location.href = '${thanksUrl}';
+  });
+});
+</script>
+</body>
+</html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
 // --- LP Variants ---
 async function handleLpVariants(request: Request, url: URL, env: Env): Promise<Response> {
   if (!env.ADMIN_JWT_SECRET) return Response.json({ status: 'error', message: 'Not configured' }, { status: 503 });
@@ -1564,8 +1666,18 @@ async function handleRedirect(request: Request, url: URL, env: Env): Promise<Res
   const adapter = new TrackedLinkAdapter(env.DB);
   const link = await adapter.getById(linkId);
   if (!link) return Response.json({ error: 'link not found' }, { status: 404 });
-  try { await adapter.recordClick(linkId, request); } catch {}
-  return Response.redirect(link.destination_url, 302);
+  let clickId: string | null = null;
+  try {
+    const click = await adapter.recordClick(linkId, request);
+    clickId = click.id;
+  } catch {}
+  // For internal LPs, append click_id and tlid to destination URL
+  let dest = link.destination_url;
+  if (dest.startsWith('/lp/') && clickId) {
+    const sep = dest.includes('?') ? '&' : '?';
+    dest += sep + 'click_id=' + clickId + '&tlid=' + linkId;
+  }
+  return Response.redirect(dest, 302);
 }
 
 // --- Inline HTML pages ---
